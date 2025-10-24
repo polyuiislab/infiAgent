@@ -24,47 +24,58 @@ class ExecuteCodeTool(BaseTool):
         策略：
         1. 优先尝试标准 venv（CPython）
         2. 失败时尝试 virtualenv（兼容 Anaconda）
-        3. 都失败返回 False
         
         Returns:
             (是否成功创建, 错误信息)
         """
-        # 创建父目录
+        import os
         venv_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # 策略 1: 标准 venv
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "venv", str(venv_path)],
+        print(f"[DEBUG] 开始创建虚拟环境: {venv_path}")
+        print(f"[DEBUG] Python 解释器: {sys.executable}")
+        
+        def _run_cmd(cmd):
+            """运行命令并返回 (成功?, 错误信息)"""
+            # 设置环境变量，确保编码正确初始化
+            env = os.environ.copy()
+            env.setdefault("PYTHONIOENCODING", "utf-8")
+            env.setdefault("PYTHONUTF8", "1")
+            
+            # Windows 下不使用 close_fds，避免标准句柄问题
+            close_fds = (sys.platform != "win32")
+            
+            res = subprocess.run(
+                cmd,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
-                timeout=60,
-                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
+                timeout=180,  # 增加超时时间
+                env=env,
+                close_fds=close_fds
             )
-            if result.returncode == 0:
-                return True, ""
-            venv_error = result.stderr or result.stdout
-        except Exception as e:
-            venv_error = str(e)
+            ok = (res.returncode == 0)
+            err = (res.stderr or "") if res.stderr else (res.stdout or "")
+            return ok, err
         
-        # 策略 2: virtualenv（兼容 Anaconda）
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "virtualenv", str(venv_path)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
-            )
-            if result.returncode == 0:
-                return True, ""
-            virtualenv_error = result.stderr or result.stdout
-        except Exception as e:
-            virtualenv_error = str(e)
+        # 方法 1: 标准 venv
+        venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+        print(f"[DEBUG] 方法1 - 尝试标准 venv: {' '.join(venv_cmd)}")
+        ok, err1 = _run_cmd(venv_cmd)
+        print(f"[DEBUG] venv 结果: {'成功' if ok else '失败 - ' + err1[:100]}")
+        if ok:
+            return True, ""
         
-        # 都失败了，返回详细错误
-        error_msg = f"venv: {venv_error[:200]}, virtualenv: {virtualenv_error[:200]}"
-        return False, error_msg
+        # 方法 2: virtualenv
+        virtualenv_cmd = [sys.executable, "-m", "virtualenv", str(venv_path)]
+        print(f"[DEBUG] 方法2 - 尝试 virtualenv: {' '.join(virtualenv_cmd)}")
+        ok, err2 = _run_cmd(virtualenv_cmd)
+        print(f"[DEBUG] virtualenv 结果: {'成功' if ok else '失败 - ' + err2[:100]}")
+        if ok:
+            return True, ""
+        
+        # 都失败
+        print(f"[DEBUG] ❌ 两种方法都失败")
+        return False, f"venv: {err1[:400]} | virtualenv: {err2[:400]}"
     
     def execute(self, task_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -238,41 +249,54 @@ class PipInstallTool(BaseTool):
         Returns:
             (是否成功创建, 错误信息)
         """
+        import os
         venv_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # 策略 1: 标准 venv
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "venv", str(venv_path)],
+        print(f"[DEBUG] 开始创建虚拟环境: {venv_path}")
+        print(f"[DEBUG] Python 解释器: {sys.executable}")
+        
+        def _run_cmd(cmd):
+            """运行命令并返回 (成功?, 错误信息)"""
+            # 设置环境变量，确保编码正确初始化
+            env = os.environ.copy()
+            env.setdefault("PYTHONIOENCODING", "utf-8")
+            env.setdefault("PYTHONUTF8", "1")
+            
+            # Windows 下不使用 close_fds，避免标准句柄问题
+            close_fds = (sys.platform != "win32")
+            
+            res = subprocess.run(
+                cmd,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
-                timeout=60,
-                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
+                timeout=180,  # 增加超时时间
+                env=env,
+                close_fds=close_fds
             )
-            if result.returncode == 0:
-                return True, ""
-            venv_error = result.stderr or result.stdout
-        except Exception as e:
-            venv_error = str(e)
+            ok = (res.returncode == 0)
+            err = (res.stderr or "") if res.stderr else (res.stdout or "")
+            return ok, err
         
-        # 策略 2: virtualenv（兼容 Anaconda）
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "virtualenv", str(venv_path)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
-            )
-            if result.returncode == 0:
-                return True, ""
-            virtualenv_error = result.stderr or result.stdout
-        except Exception as e:
-            virtualenv_error = str(e)
+        # 方法 1: 标准 venv
+        venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+        print(f"[DEBUG] 方法1 - 尝试标准 venv: {' '.join(venv_cmd)}")
+        ok, err1 = _run_cmd(venv_cmd)
+        print(f"[DEBUG] venv 结果: {'成功' if ok else '失败 - ' + err1[:100]}")
+        if ok:
+            return True, ""
         
-        # 都失败了，返回详细错误
-        error_msg = f"venv: {venv_error[:200]}, virtualenv: {virtualenv_error[:200]}"
-        return False, error_msg
+        # 方法 2: virtualenv
+        virtualenv_cmd = [sys.executable, "-m", "virtualenv", str(venv_path)]
+        print(f"[DEBUG] 方法2 - 尝试 virtualenv: {' '.join(virtualenv_cmd)}")
+        ok, err2 = _run_cmd(virtualenv_cmd)
+        print(f"[DEBUG] virtualenv 结果: {'成功' if ok else '失败 - ' + err2[:100]}")
+        if ok:
+            return True, ""
+        
+        # 都失败
+        print(f"[DEBUG] ❌ 两种方法都失败")
+        return False, f"venv: {err1[:400]} | virtualenv: {err2[:400]}"
     
     def execute(self, task_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
