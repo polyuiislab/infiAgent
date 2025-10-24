@@ -38,7 +38,8 @@ class ExecuteCodeTool(BaseTool):
                 [sys.executable, "-m", "venv", str(venv_path)],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
             )
             if result.returncode == 0:
                 return True, ""
@@ -52,7 +53,8 @@ class ExecuteCodeTool(BaseTool):
                 [sys.executable, "-m", "virtualenv", str(venv_path)],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
             )
             if result.returncode == 0:
                 return True, ""
@@ -61,7 +63,7 @@ class ExecuteCodeTool(BaseTool):
             virtualenv_error = str(e)
         
         # 都失败了，返回详细错误
-        error_msg = f"venv 错误: {venv_error[:200]}\nvirtualenv 错误: {virtualenv_error[:200]}"
+        error_msg = f"venv: {venv_error[:200]}, virtualenv: {virtualenv_error[:200]}"
         return False, error_msg
     
     def execute(self, task_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
@@ -244,7 +246,8 @@ class PipInstallTool(BaseTool):
                 [sys.executable, "-m", "venv", str(venv_path)],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
             )
             if result.returncode == 0:
                 return True, ""
@@ -258,7 +261,8 @@ class PipInstallTool(BaseTool):
                 [sys.executable, "-m", "virtualenv", str(venv_path)],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                stdin=subprocess.DEVNULL  # 修复 Bad file descriptor
             )
             if result.returncode == 0:
                 return True, ""
@@ -320,8 +324,7 @@ class PipInstallTool(BaseTool):
                     [str(pip_exec), "install", package],
                     capture_output=True,
                     text=True,
-                    timeout=timeout,
-                    stdin=subprocess.DEVNULL  # 修复 "Bad file descriptor" 错误
+                    timeout=timeout
                 )
                 
                 if result.returncode == 0:
