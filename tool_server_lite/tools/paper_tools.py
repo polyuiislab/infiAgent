@@ -113,64 +113,30 @@ class PaperAnalyzeTool(BaseTool):
                 
                 paper_content = read_result.get("output", "")
             
-            # 步骤4: 使用 LLM 分析内容（简单方式）
-            # 直接使用 litellm 进行文本分析
+            # 步骤4: 使用 LLM 分析内容
             import sys
             import os
             parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             if parent_dir not in sys.path:
                 sys.path.insert(0, parent_dir)
             
-            # 导入必要的库
-            from litellm import completion
-            import yaml
-            from pathlib import Path
-            
-            # 读取配置
-            current_dir = Path(__file__).parent.parent
-            config_path = current_dir.parent / "config" / "run_env_config" / "llm_config.yaml"
-            
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            
-            api_key = config.get("api_key")
-            api_base = config.get("base_url", "")
-            models = config.get("models", [])
-            temperature = config.get("temperature", 0)
+            from llm_client_lite import get_llm_client
             
             try:
-                # 构建消息
-                messages = [{
-                    "role": "user",
-                    "content": f"以下是论文内容：\n\n{paper_content}\n\n请回答以下问题：{question}"
-                }]
+                # 获取 LLM 客户端
+                llm_client = get_llm_client()
                 
-                # 调用 LLM
-                response = completion(
-                    model=models[0] if models else "gpt-4",
-                    messages=messages,
-                    temperature=temperature,
-                    api_key=api_key,
-                    api_base=api_base
+                # 调用文本分析
+                analysis_result = llm_client.text_query(
+                    text=paper_content,
+                    question=question
                 )
                 
-                if response.choices and len(response.choices) > 0:
-                    analysis_result = response.choices[0].message.content
-                    
-                    # 返回完整结果
-                    full_result = f"【论文内容】\n{paper_content}\n\n【分析结果】\n{analysis_result}"
-                    
-                    return {
-                        "status": "success",
-                        "output": full_result,
-                        "error": ""
-                    }
-                else:
-                    return {
-                        "status": "error",
-                        "output": "",
-                        "error": "LLM响应格式异常"
-                    }
+                return {
+                    "status": "success",
+                    "output": analysis_result,
+                    "error": ""
+                }
                     
             except Exception as e:
                 return {
