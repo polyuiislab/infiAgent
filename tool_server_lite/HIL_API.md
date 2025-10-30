@@ -129,6 +129,7 @@ curl http://localhost:8001/api/hil/tasks | jq
 **状态值**:
 - `waiting`: 等待中
 - `completed`: 已完成
+- `cancelled`: 已取消
 - `timeout`: 超时
 
 **示例**:
@@ -167,7 +168,48 @@ curl -X POST http://localhost:8001/api/hil/complete/HIL-001 \
 **效果**: 
 - HIL 任务状态标记为 `completed`
 - 阻塞的 `human_in_loop` 工具调用立即返回成功
+- Agent 收到消息：`✅ 用户已确认: {result}`
 - Agent 继续执行后续步骤
+
+---
+
+### 5. 取消 HIL 任务 ⏭️
+
+**端点**: `POST /api/hil/cancel/{hil_id}`
+
+**请求 Body**:
+```json
+{
+  "reason": "取消原因（可选）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "HIL task {hil_id} marked as cancelled"
+}
+```
+
+**示例**:
+```bash
+curl -X POST http://localhost:8001/api/hil/cancel/HIL-001 \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "用户不需要此功能"}'
+```
+
+**效果**: 
+- HIL 任务状态标记为 `cancelled`
+- 阻塞的 `human_in_loop` 工具调用立即返回成功
+- Agent 收到消息：`⏭️ 用户已取消: {reason}`
+- Agent 可以根据取消信息采取替代方案或跳过该步骤
+
+**命令行快捷方式**:
+```bash
+# 使用 mla-agent 命令
+mla-agent cancel HIL-001 --reason "不需要此功能"
+```
 
 ---
 

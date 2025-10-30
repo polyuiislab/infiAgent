@@ -266,6 +266,54 @@ class LLMClientLite:
         except Exception as e:
             raise Exception(f"调用音频分析API失败: {str(e)}")
     
+    def text_query(
+        self,
+        text: str,
+        question: str,
+        model: Optional[str] = None
+    ) -> str:
+        """
+        通用文本分析（适用于论文、文档等长文本）
+        
+        Args:
+            text: 要分析的文本内容
+            question: 问题或指令
+            model: 模型名称，默认使用配置中的第一个可用模型
+            
+        Returns:
+            LLM的响应文本
+            
+        Raises:
+            Exception: LLM调用失败
+        """
+        # 构建消息
+        messages = [{
+            "role": "user",
+            "content": f"以下是内容：\n\n{text}\n\n{question}"
+        }]
+        
+        # 选择模型
+        if model is None:
+            model = self.models[0]
+        
+        # 调用LLM
+        try:
+            response = completion(
+                model=model,
+                messages=messages,
+                temperature=self.temperature,
+                api_key=self.api_key,
+                api_base=self.base_url
+            )
+            
+            # 提取响应
+            if response.choices and len(response.choices) > 0:
+                return response.choices[0].message.content
+            else:
+                raise Exception("LLM响应格式异常：缺少choices字段")
+                
+        except Exception as e:
+            raise Exception(f"调用LLM文本分析API失败: {str(e)}")
 
 
 # 全局单例（延迟初始化）

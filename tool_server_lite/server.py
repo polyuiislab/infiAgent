@@ -39,7 +39,7 @@ from tools import (
     PipInstallTool,
     ExecuteCommandTool
 )
-from tools.human_tools import get_hil_status, complete_hil_task, list_hil_tasks
+from tools.human_tools import get_hil_status, complete_hil_task, cancel_hil_task, list_hil_tasks
 
 app = FastAPI(
     title="Tool Server Lite",
@@ -321,6 +321,18 @@ async def complete_hil(hil_id: str, request: HilCompleteRequest = None):
     """完成 HIL 任务"""
     result = request.result if request else "完成"
     return complete_hil_task(hil_id, result)
+
+
+class HilCancelRequest(BaseModel):
+    """HIL取消请求"""
+    reason: str = "用户取消"
+
+
+@app.post("/api/hil/cancel/{hil_id}")
+async def cancel_hil(hil_id: str, request: HilCancelRequest = None):
+    """取消 HIL 任务"""
+    reason = request.reason if request else "用户取消"
+    return cancel_hil_task(hil_id, reason)
 
 
 def start_server(host: str = "0.0.0.0", port: int = 8001):

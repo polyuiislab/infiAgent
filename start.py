@@ -83,6 +83,11 @@ def main():
     confirm_parser.add_argument('hil_id', type=str, help='HIL 任务 ID')
     confirm_parser.add_argument('--result', type=str, default='确认', help='用户操作结果')
     
+    # cancel 子命令（HIL 取消）
+    cancel_parser = subparsers.add_parser('cancel', help='取消 HIL 任务')
+    cancel_parser.add_argument('hil_id', type=str, help='HIL 任务 ID')
+    cancel_parser.add_argument('--reason', type=str, default='用户取消', help='取消原因')
+    
     # 主命令参数
     parser.add_argument('--task_id', type=str, help='任务ID（绝对路径，作为workspace）')
     parser.add_argument('--agent_system', type=str, default='Test_agent', help='Agent系统名称')
@@ -140,6 +145,37 @@ def main():
                 return 0
             else:
                 print(f"❌ 完成失败: {result.get('error', 'Unknown error')}")
+                return 1 
+        except Exception as e:
+            print(f"❌ 连接工具服务器失败: {e}")
+            return 1
+    
+    # 处理 cancel 命令
+    if args.command == 'cancel':
+        import requests
+        import yaml
+        
+        # 读取工具服务器地址
+        config_path = Path(__file__).parent / "config" / "run_env_config" / "tool_config.yaml"
+        with open(config_path, 'r', encoding='utf-8') as f:
+            tool_config = yaml.safe_load(f)
+        server_url = tool_config.get('tools_server', 'http://127.0.0.1:8001').rstrip('/')
+        
+        # 调用 HIL 取消 API
+        try:
+            response = requests.post(
+                f"{server_url}/api/hil/cancel/{args.hil_id}",
+                json={"reason": args.reason},
+                timeout=5
+            )
+            result = response.json()
+            
+            if result.get('success'):
+                print(f"⏭️  HIL 任务已取消: {args.hil_id}")
+                print(f"   原因: {args.reason}")
+                return 0
+            else:
+                print(f"❌ 取消失败: {result.get('error', 'Unknown error')}")
                 return 1 
         except Exception as e:
             print(f"❌ 连接工具服务器失败: {e}")

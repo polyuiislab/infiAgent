@@ -80,6 +80,17 @@ class HumanInLoopTool(BaseTool):
                         "error": ""
                     }
                 
+                # 检查是否取消
+                if task and task["status"] == "cancelled":
+                    reason = task.get("result", "用户取消操作")
+                    # 清理任务
+                    del HIL_TASKS[hil_id]
+                    return {
+                        "status": "success",
+                        "output": f"用户取消操作: {reason}",
+                        "error": ""
+                    }
+                
                 # 异步等待（不阻塞服务器）
                 await asyncio.sleep(check_interval)
                 
@@ -128,6 +139,25 @@ def complete_hil_task(hil_id: str, result: str = "完成") -> Dict[str, Any]:
     return {
         "success": True,
         "message": f"HIL task {hil_id} marked as completed"
+    }
+
+
+def cancel_hil_task(hil_id: str, reason: str = "用户取消") -> Dict[str, Any]:
+    """取消 HIL 任务"""
+    task = HIL_TASKS.get(hil_id)
+    if not task:
+        return {
+            "success": False,
+            "error": f"HIL task not found: {hil_id}"
+        }
+    
+    # 标记为取消
+    HIL_TASKS[hil_id]["status"] = "cancelled"
+    HIL_TASKS[hil_id]["result"] = reason
+    
+    return {
+        "success": True,
+        "message": f"HIL task {hil_id} marked as cancelled"
     }
 
 
