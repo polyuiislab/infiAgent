@@ -87,6 +87,12 @@ python -m playwright install chromium
 
 Please set the corresponding Python bin directory as an environment variable. Alternatively, you can choose to launch the CLI under conda or UV.
 
+```bash
+find your python bin path
+add it into environment variable
+source file
+```
+
 **3. Configure API Keys**
 
 ```bash
