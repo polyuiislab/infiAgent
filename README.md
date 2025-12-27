@@ -55,12 +55,12 @@ MLA handles the entire research workflow - from literature search and experiment
 
 - [See It In Action](#-see-it-in-action)
 - [Quick Start](#-quick-start)
+- [How It Works](#-how-it-works)
 - [Interface Screenshots](#-interface-screenshots)
 - [Configuration Guide](#-configuration-guide)
 - [CLI Interface](#-cli-interface)
 - [SDK Integration](#-sdk-integration)
 - [Example Outputs](#-example-outputs)
-- [How It Works](#-how-it-works)
 
 ---
 
@@ -144,6 +144,149 @@ mla-agent --cli
 ```
 
 ---
+
+## 🎯 How It Works
+
+MLA's design philosophy is **"Provide short but high-value context for the next step."** To achieve this, the framework implements multiple innovations:
+
+### 1. 🌲 Serial Multi-Agent System
+
+MLA deploys agents in a **tree-structured hierarchy** (e.g., Grandparent → Parent → Child). This ensures:
+
+- ✅ **Single-purpose agents**: Each agent has a focused role
+- ✅ **Minimal tool sets**: Agents only access necessary tools
+- ✅ **Task alignment**: Serial execution prevents parallel conflicts
+- ✅ **Clear delegation**: Parent agents orchestrate child agents
+
+**Example Hierarchy:**
+```
+alpha_agent (Level 3)
+  ├── data_collection_agent (Level 2)
+  │   └── web_search_agent (Level 1)
+  ├── coder_agent (Level 2)
+  └── material_to_document_agent (Level 2)
+```
+
+### 2. 🎯 Nested Attention Mechanism
+
+Long documents (PDFs, novels, papers) are **never directly loaded into context**. Instead:
+
+- ✅ Use `answer_from_pdf`, `answer_from_document` tools
+- ✅ Query-driven content extraction
+- ✅ Only relevant excerpts or summaries enter context
+- ✅ **Application-layer attention allocation** through tools
+
+**Traditional Approach:**
+```
+Load entire 50-page PDF → Agent processes everything → Token overflow
+```
+
+**MLA Approach:**
+```
+Agent asks: "What is the methodology?"
+→ Tool extracts relevant sections (2 pages)
+→ Returns concise answer → Minimal token usage
+```
+
+### 3. 📁 File-Centric Architecture
+
+**"Files are everything."** All outputs and interactions are saved to the file system:
+
+- ✅ Web scraping → Saves as Markdown files
+- ✅ PDF parsing → Extracts to structured documents
+- ✅ Sub-agent results → Stored as files
+- ✅ **No immediate returns** cluttering context
+
+**Benefits:**
+- Clear audit trail
+- Reusable artifacts
+- Context-free state representation
+
+### 4. ⚡ Ten-Step Strategy (No Context Compression)
+
+A key insight: **The current file system state represents the effect of all historical actions.**
+
+- ✅ A separate **thinking module** updates file space state every 10 steps
+- ✅ Agents only retain **the last 10 actions** (since last state update)
+- ✅ **No need for context compression**
+- ✅ Historical actions are reflected in file system, not conversation history
+
+**Traditional LLM Agents:**
+```
+Step 1: Create file A
+Step 2: Edit file B
+...
+Step 100: Context overflow → Compression needed → Information loss
+```
+
+**MLA Approach:**
+```
+Steps 1-10: Actions recorded
+Step 10: Thinking module updates "Current State: Files A, B, C exist with..."
+Steps 11-20: Only these + Current State kept
+→ No compression, no information loss
+```
+
+### 5. 🔧 Batch File Operations
+
+Inspired by [Claude Code](https://www.anthropic.com/), MLA uses **list-based tool parameters** to save tokens:
+
+- ✅ Read multiple files in one call
+- ✅ Batch operations reduce cumulative overhead
+- ✅ Significant token savings on repeated actions
+
+**Example:**
+```python
+# Traditional: 3 separate calls
+file_read(path="file1.txt")
+file_read(path="file2.txt")
+file_read(path="file3.txt")
+
+# MLA: 1 batch call
+file_read(paths=["file1.txt", "file2.txt", "file3.txt"])
+```
+
+### 6. 💾 Long-Term Memory with Task ID
+
+- ✅ **Task ID = Workspace absolute path** (not user-configurable)
+- ✅ Same task ID allows **unlimited conversation sessions**
+- ✅ Agents remember all historical tasks in the workspace
+- ✅ Persistent memory across interruptions and restarts
+
+**Usage:**
+```bash
+# First session
+mla-agent --task_id ~/research --user_input "Collect papers on Transformers"
+# → Stores conversation in ~/mla_v3/conversations/{hash}_research_*
+
+# Second session (days later)
+mla-agent --task_id ~/research --user_input "Summarize the collected papers"
+# → Agent remembers previous session and accesses collected files
+```
+
+### 7. 📊 Call Graph-Based Shared Context
+
+The `hierarchy_manager` maintains a **dynamic call relationship graph**:
+
+- ✅ Tracks parent-child agent relationships
+- ✅ Injects call graph into shared context
+- ✅ Prevents agents from overstepping boundaries
+- ✅ Maintains task alignment across multi-agent system
+
+**Call Graph Example:**
+```json
+{
+  "current_agent": "coder_agent",
+  "parent": "alpha_agent",
+  "siblings": ["data_collection_agent", "material_to_document_agent"],
+  "allowed_tools": ["python_run", "file_write", "file_read"]
+}
+```
+
+This ensures `coder_agent` won't accidentally call `web_search` (not in its scope) or interfere with sibling agents.
+
+---
+
 
 ## 📸 Interface Screenshots
 
@@ -519,14 +662,14 @@ function runAgent(
     
     let buffer = '';
     
-    child.stdout.on('data', (data) => {
+child.stdout.on('data', (data) => {
       buffer += data.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       
       lines.forEach(line => {
-        if (!line.trim()) return;
-        
+    if (!line.trim()) return;
+    
         try {
           const event: AgentEvent = JSON.parse(line);
           onEvent(event);
@@ -538,10 +681,10 @@ function runAgent(
           }
         } catch (e) {
           console.error('Failed to parse event:', line);
-        }
-      });
-    });
-    
+    }
+  });
+});
+
     child.stderr.on('data', (data) => {
       // Log errors to stderr
       console.error(data.toString());
@@ -665,147 +808,6 @@ upload/
 
 ---
 
-## 🎯 How It Works
-
-MLA's design philosophy is **"Provide short but high-value context for the next step."** To achieve this, the framework implements multiple innovations:
-
-### 1. 🌲 Serial Multi-Agent System
-
-MLA deploys agents in a **tree-structured hierarchy** (e.g., Grandparent → Parent → Child). This ensures:
-
-- ✅ **Single-purpose agents**: Each agent has a focused role
-- ✅ **Minimal tool sets**: Agents only access necessary tools
-- ✅ **Task alignment**: Serial execution prevents parallel conflicts
-- ✅ **Clear delegation**: Parent agents orchestrate child agents
-
-**Example Hierarchy:**
-```
-alpha_agent (Level 3)
-  ├── data_collection_agent (Level 2)
-  │   └── web_search_agent (Level 1)
-  ├── coder_agent (Level 2)
-  └── material_to_document_agent (Level 2)
-```
-
-### 2. 🎯 Nested Attention Mechanism
-
-Long documents (PDFs, novels, papers) are **never directly loaded into context**. Instead:
-
-- ✅ Use `answer_from_pdf`, `answer_from_document` tools
-- ✅ Query-driven content extraction
-- ✅ Only relevant excerpts or summaries enter context
-- ✅ **Application-layer attention allocation** through tools
-
-**Traditional Approach:**
-```
-Load entire 50-page PDF → Agent processes everything → Token overflow
-```
-
-**MLA Approach:**
-```
-Agent asks: "What is the methodology?"
-→ Tool extracts relevant sections (2 pages)
-→ Returns concise answer → Minimal token usage
-```
-
-### 3. 📁 File-Centric Architecture
-
-**"Files are everything."** All outputs and interactions are saved to the file system:
-
-- ✅ Web scraping → Saves as Markdown files
-- ✅ PDF parsing → Extracts to structured documents
-- ✅ Sub-agent results → Stored as files
-- ✅ **No immediate returns** cluttering context
-
-**Benefits:**
-- Clear audit trail
-- Reusable artifacts
-- Context-free state representation
-
-### 4. ⚡ Ten-Step Strategy (No Context Compression)
-
-A key insight: **The current file system state represents the effect of all historical actions.**
-
-- ✅ A separate **thinking module** updates file space state every 10 steps
-- ✅ Agents only retain **the last 10 actions** (since last state update)
-- ✅ **No need for context compression**
-- ✅ Historical actions are reflected in file system, not conversation history
-
-**Traditional LLM Agents:**
-```
-Step 1: Create file A
-Step 2: Edit file B
-...
-Step 100: Context overflow → Compression needed → Information loss
-```
-
-**MLA Approach:**
-```
-Steps 1-10: Actions recorded
-Step 10: Thinking module updates "Current State: Files A, B, C exist with..."
-Steps 11-20: Only these + Current State kept
-→ No compression, no information loss
-```
-
-### 5. 🔧 Batch File Operations
-
-Inspired by [Claude Code](https://www.anthropic.com/), MLA uses **list-based tool parameters** to save tokens:
-
-- ✅ Read multiple files in one call
-- ✅ Batch operations reduce cumulative overhead
-- ✅ Significant token savings on repeated actions
-
-**Example:**
-```python
-# Traditional: 3 separate calls
-file_read(path="file1.txt")
-file_read(path="file2.txt")
-file_read(path="file3.txt")
-
-# MLA: 1 batch call
-file_read(paths=["file1.txt", "file2.txt", "file3.txt"])
-```
-
-### 6. 💾 Long-Term Memory with Task ID
-
-- ✅ **Task ID = Workspace absolute path** (not user-configurable)
-- ✅ Same task ID allows **unlimited conversation sessions**
-- ✅ Agents remember all historical tasks in the workspace
-- ✅ Persistent memory across interruptions and restarts
-
-**Usage:**
-```bash
-# First session
-mla-agent --task_id ~/research --user_input "Collect papers on Transformers"
-# → Stores conversation in ~/mla_v3/conversations/{hash}_research_*
-
-# Second session (days later)
-mla-agent --task_id ~/research --user_input "Summarize the collected papers"
-# → Agent remembers previous session and accesses collected files
-```
-
-### 7. 📊 Call Graph-Based Shared Context
-
-The `hierarchy_manager` maintains a **dynamic call relationship graph**:
-
-- ✅ Tracks parent-child agent relationships
-- ✅ Injects call graph into shared context
-- ✅ Prevents agents from overstepping boundaries
-- ✅ Maintains task alignment across multi-agent system
-
-**Call Graph Example:**
-```json
-{
-  "current_agent": "coder_agent",
-  "parent": "alpha_agent",
-  "siblings": ["data_collection_agent", "material_to_document_agent"],
-  "allowed_tools": ["python_run", "file_write", "file_read"]
-}
-```
-
-This ensures `coder_agent` won't accidentally call `web_search` (not in its scope) or interfere with sibling agents.
-
----
 
 ## 📖 Documentation
 
