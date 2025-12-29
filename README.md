@@ -5,7 +5,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-3.0.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/python-3.9+-green.svg" alt="Python">
-  <img src="https://img.shields.io/badge/license-MIT-orange.svg" alt="License">
+  <img src="https://img.shields.io/badge/license-GPL-blue.svg" alt="License: GPL">
 </p>
 
 ## 🌟 Introduction
@@ -29,7 +29,7 @@ The default configuration in this repository is a **research-oriented semi-speci
 - 🧪 **Scientific Computing**: ECM protein simulation, logistics scheduling, assignment grading, etc.
 - 🔬 **Full Research Pipeline**: Literature collection, experiments, figures, and paper drafting
 
----
+Attention: Current coding task only support python project. Other language may supported later.
 
 ## 🎬 Outputs
 
