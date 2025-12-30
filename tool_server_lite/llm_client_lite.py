@@ -161,14 +161,14 @@ class LLMClientLite:
         model: Optional[str] = None
     ) -> str:
         """
-        调用模型生成图片（使用 chat completion API + modalities）
+        调用模型生成图片
         
         Args:
             prompt: 提示词
             model: 模型名称，默认使用 figure_models 中的第一个
             
         Returns:
-            图片的 base64 数据 URL（格式：data:image/png;base64,...）
+            图片的 base64 数据 URL（格式：data:image/png;base64,...）或 HTTP URL
         """
         if model is None:
             if self.figure_models:
@@ -179,62 +179,72 @@ class LLMClientLite:
                 model = "dall-e-3"
         
         try:
-            # 直接使用 requests 调用 OpenRouter API
-            # 因为 LiteLLM 在解析响应时会丢失 images 字段
-            import requests
+            # 判断使用哪种 API（通过 base_url 检测）
+            # OpenRouter: 使用 chat.completions + modalities
+            # 官方 API (gemini/, openai/): 使用 image_generation
             
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
+            is_openrouter = self.base_url and 'openrouter' in self.base_url.lower()
             
-            payload = {
-                "model": model,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "modalities": ["image", "text"]
-            }
-            
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=120
-            )
-            
-            if response.status_code != 200:
-                raise Exception(f"API 请求失败，状态码: {response.status_code}，响应: {response.text}")
-            
-            result = response.json()
-            
-            # 从响应中提取图片
-            if result.get("choices") and len(result["choices"]) > 0:
-                message = result["choices"][0].get("message", {})
+            if is_openrouter:
+                # OpenRouter: 使用 OpenAI SDK 的 chat completion + modalities
+                from openai import OpenAI
                 
-                # 检查是否有 images 字段
-                images = message.get("images")
-                if images and len(images) > 0:
-                    # 返回第一张图片的 URL（base64 数据）
-                    first_image = images[0]
-                    
-                    # images 是字典数组，结构类似 [{"image_url": {"url": "data:image/..."}}]
-                    if isinstance(first_image, dict):
-                        image_url = first_image.get("image_url", {}).get("url")
-                        if image_url:
-                            print(f"[INFO] 成功生成图片，URL 长度: {len(image_url)}")
-                            return image_url
-                        else:
-                            raise Exception(f"图片数据格式异常: {first_image}")
-                    else:
-                        raise Exception(f"未知的图片格式: {type(first_image)}")
+                client = OpenAI(
+                    base_url=self.base_url,
+                    api_key=self.api_key
+                )
+                
+                print(f"[INFO] 调用 OpenRouter 图片生成: {model}")
+                
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    extra_body={"modalities": ["image", "text"]}
+                )
+                
+                # 提取图片
+                message = response.choices[0].message
+                if hasattr(message, 'images') and message.images:
+                    for image in message.images:
+                        if isinstance(image, dict):
+                            image_url = image.get('image_url', {}).get('url')
+                            if image_url:
+                                print(f"[INFO] 成功生成图片: {image_url[:50]}...")
+                                return image_url
+                    raise Exception("图片数据格式异常")
                 else:
-                    raise Exception(f"模型响应中没有图片数据。Message keys: {list(message.keys())}")
+                    raise Exception(f"响应中没有图片。Message 属性: {dir(message)}")
+            
             else:
-                raise Exception(f"模型未返回有效响应")
+                # 官方 API: 使用 litellm.image_generation
+                from litellm import image_generation
+                import os
+                
+                # 为官方 API 设置环境变量
+                if model.startswith('gemini/'):
+                    os.environ['GEMINI_API_KEY'] = self.api_key
+                elif model.startswith('openai/') or model in ['dall-e-2', 'dall-e-3']:
+                    os.environ['OPENAI_API_KEY'] = self.api_key
+                
+                print(f"[INFO] 调用官方 API 图片生成: {model}")
+                
+                response = image_generation(model=model, prompt=prompt)
+                
+                # 解析响应
+                if response.data and len(response.data) > 0:
+                    first_image = response.data[0]
+                    
+                    if hasattr(first_image, 'url') and first_image.url:
+                        print(f"[INFO] 成功生成图片: {first_image.url[:100]}...")
+                        return first_image.url
+                    elif hasattr(first_image, 'b64_json') and first_image.b64_json:
+                        data_url = f"data:image/png;base64,{first_image.b64_json}"
+                        print(f"[INFO] 成功生成图片（base64），长度: {len(data_url)}")
+                        return data_url
+                    else:
+                        raise Exception(f"图片响应格式异常: {first_image}")
+                else:
+                    raise Exception("模型未返回图片数据")
                 
         except Exception as e:
             raise Exception(f"生成图片失败: {str(e)}")

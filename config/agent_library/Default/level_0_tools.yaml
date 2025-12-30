@@ -284,6 +284,8 @@ tools:
       properties:
         keys:
           type: "array"
+          items:
+            type: "string"
           description: "要删除的引用键（如 'sun2023blockchain'）或引用键数组。"
         bib_path:
           type: "string"

@@ -1,0 +1,16 @@
+temperature: 0
+max_tokens: 0
+max_context_window: 200000
+# Google 官方 API - litellm 会自动识别 gemini/ 前缀并路由到 Google
+# base_url 留空，让 litellm 使用默认的 Google API 端点
+base_url: 
+api_key: your_google_studio_key_here
+models:
+- gemini/gemini-3-flash-preview
+figure_models:
+- gemini/gemini-3-pro-image-preview
+compressor_models:
+- gemini/gemini-3-flash-preview
+read_figure_models:
+- gemini/gemini-3-flash-preview
+

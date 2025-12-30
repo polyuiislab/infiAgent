@@ -1,7 +1,7 @@
 # MLA V3 依赖包
 
 # 核心依赖
-litellm>=1.0.0          # 统一的LLM接口
+litellm        # 统一的LLM接口
 pyyaml>=6.0             # YAML配置文件解析
 tiktoken>=0.5.0
 virtualenv>=20.0.0      # 虚拟环境（兼容 Anaconda）

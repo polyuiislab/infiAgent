@@ -182,8 +182,11 @@ class SimpleLLMClient:
                 "messages": messages,
                 "temperature": temperature,
                 "api_key": self.api_key,
-                "api_base": self.base_url  # 注意：LiteLLM使用api_base而不是base_url
             }
+            
+            # 只在 base_url 非空时添加 api_base（对于 Google/Anthropic 等官方 API，留空让 litellm 自动路由）
+            if self.base_url:
+                kwargs["api_base"] = self.base_url
             
             # 只在max_tokens > 0时添加
             if max_tokens > 0:
@@ -193,8 +196,12 @@ class SimpleLLMClient:
             if tools_definition:
                 kwargs["tools"] = tools_definition
                 if tool_choice == "required":
+                    # litellm 会自动将 tool_choice 转换为各模型的格式
+                    # OpenAI: tool_choice="required"
+                    # Gemini: tool_config={function_calling_config: {mode: "ANY"}}
                     kwargs["tool_choice"] = "required"
                 # 禁用并行工具调用（每次只调用一个工具）
+                # 注意：Gemini 不支持 parallel_tool_calls，但 litellm.drop_params=True 会自动丢弃
                 kwargs["parallel_tool_calls"] = False
             
             # 添加模型特定的额外参数
