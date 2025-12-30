@@ -1,18 +1,20 @@
-<p align="center">
+<div align="center">
   <img src="assets/logo.png" alt="infiAgent Logo" width="200">
-</p>
 
-# MLA V3 - Build Domain-Specific SOTA-Level AI Agents
+  <h1>MLA V3 - Build Domain-Specific SOTA-Level AI Agents</h1>
 
+  <p>
+    <img src="https://img.shields.io/badge/version-3.0.0-blue.svg" alt="Version">
+    <img src="https://img.shields.io/badge/python-3.9+-green.svg" alt="Python">
+    <img src="https://img.shields.io/badge/license-GPL-blue.svg" alt="License: GPL">
+  </p>
 
+  <p>
+    <a href="README.md">English</a> | <a href="README_CN.md">简体中文</a>
+  </p>
+</div>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-3.0.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/python-3.9+-green.svg" alt="Python">
-  <img src="https://img.shields.io/badge/license-GPL-blue.svg" alt="License: GPL">
-</p>
-
-[English](README.md) | [简体中文](README_CN.md)
+---
 
 ## 🌟 Introduction
 
