@@ -7,7 +7,6 @@ api_key:
 models:
 - openai/google/gemini-3-flash-preview
 figure_models:
-#无效了
 - google/gemini-3-pro-image-preview
 compressor_models:
 - openai/google/gemini-3-flash-preview
