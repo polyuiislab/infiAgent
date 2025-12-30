@@ -29,6 +29,10 @@ The default configuration in this repository is a **research-oriented semi-speci
 - 🧪 **Scientific Computing**: ECM protein simulation, logistics scheduling, assignment grading, etc.
 - 🔬 **Full Research Pipeline**: Literature collection, experiments, figures, and paper drafting
 
+### Update
+
+- support gemini api key from google ai studio now. Please See the gemini config in dir.
+
 Attention: Current coding task only support python project. Other language may supported later. In old version execute_command only support safe command like cd or grep，now it include every commands including rm. Please try to use it in docker mode if your task may edit system file.
 
 ## 🎬 Outputs
