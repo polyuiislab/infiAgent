@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="infiAgent Logo" width="200">
+</p>
+
 # MLA V3 - Build Domain-Specific SOTA-Level AI Agents
 
 [English](README.md) | [简体中文](README_CN.md)
