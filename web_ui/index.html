@@ -28,6 +28,67 @@
                             <button id="clear-task-btn" class="btn-danger">Clear Task</button>
                             <button id="copy-task-btn" class="btn-secondary">Copy Task</button>
                             <button id="download-task-btn" class="btn-secondary">Download Task</button>
+                            <button id="config-btn" class="btn-secondary" title="Configuration"><i class="fas fa-cog"></i> Config</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration Modal -->
+        <div id="config-modal" class="config-modal" style="display: none;">
+            <div class="config-modal-content">
+                <div class="config-modal-header">
+                    <h2><i class="fas fa-cog"></i> Configuration</h2>
+                    <button id="close-config-btn" class="btn-icon" title="Close"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="config-modal-body">
+                    <div class="config-sidebar">
+                        <div class="config-section">
+                            <div class="config-section-header">
+                                <i class="fas fa-server"></i> Run Environment Config
+                            </div>
+                            <div class="config-file-list" id="run-env-config-list">
+                                <!-- Files will be loaded dynamically -->
+                            </div>
+                        </div>
+                        <div class="config-section">
+                            <div class="config-section-header">
+                                <i class="fas fa-robot"></i> Agent Config
+                            </div>
+                            <div class="config-file-list" id="agent-config-list">
+                                <!-- Files will be loaded dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-editor">
+                        <div class="config-editor-header">
+                            <div class="config-tabs" id="config-tabs">
+                                <button class="config-tab active" data-tab="editor">
+                                    <i class="fas fa-edit"></i> Editor
+                                </button>
+                                <button class="config-tab" data-tab="tree" id="agent-tree-tab">
+                                    <i class="fas fa-sitemap"></i> Agent Tree
+                                </button>
+                            </div>
+                            <div class="config-editor-actions" id="config-editor-actions">
+                                <span id="config-file-name" class="config-file-name">llm_config.yaml</span>
+                                <div class="config-editor-buttons">
+                                    <button id="save-config-btn" class="btn-primary"><i class="fas fa-save"></i> Save</button>
+                                    <button id="reload-config-btn" class="btn-secondary"><i class="fas fa-sync-alt"></i> Reload</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="config-editor-content" id="config-editor-content">
+                            <div class="config-tab-content active" id="tab-editor">
+                                <textarea id="config-editor-textarea" placeholder="Loading configuration..."></textarea>
+                            </div>
+                            <div class="config-tab-content" id="tab-tree">
+                                <div class="agent-tree-container" id="agent-tree-container">
+                                    <div class="agent-tree-loading">Loading agent tree...</div>
+                                </div>
+                            </div>
+                            <div class="config-status" id="config-status"></div>
                         </div>
                     </div>
                 </div>

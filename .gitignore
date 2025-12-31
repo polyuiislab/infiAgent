@@ -54,3 +54,6 @@ docker/
 mla-docker-build.tar.gz
 test_doc/
 
+# workspace
+workspace
+workspace/*

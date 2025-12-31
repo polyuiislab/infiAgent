@@ -2212,6 +2212,268 @@ def respond_hil_task():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/config/list', methods=['GET'])
+@login_required
+def list_config_files():
+    """List available configuration files"""
+    try:
+        username = session.get('username')
+        if not username:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        # Get config type from query parameter (run_env or agent)
+        config_type = request.args.get('type', 'run_env')
+        
+        if config_type == 'run_env':
+            config_dir = project_root / "config" / "run_env_config"
+        elif config_type == 'agent':
+            # Default to Default system, can be extended to support other systems
+            config_dir = project_root / "config" / "agent_library" / "Default"
+        else:
+            return jsonify({"error": "Invalid config type. Use 'run_env' or 'agent'"}), 400
+        
+        if not config_dir.exists():
+            return jsonify({"error": "Config directory not found"}), 404
+        
+        # List all YAML files in config directory
+        config_files = []
+        for file_path in config_dir.glob("*.yaml"):
+            if file_path.is_file():
+                config_files.append({
+                    "name": file_path.name,
+                    "path": str(file_path.relative_to(project_root))
+                })
+        
+        # Sort by filename
+        config_files.sort(key=lambda x: x['name'])
+        
+        return jsonify({"files": config_files})
+    except Exception as e:
+        import traceback
+        print(f"List config files error: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/config/read', methods=['GET'])
+@login_required
+def read_config_file():
+    """Read configuration file content"""
+    try:
+        username = session.get('username')
+        if not username:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        filename = request.args.get('file', '')
+        config_type = request.args.get('type', 'run_env')
+        
+        if not filename:
+            return jsonify({"error": "Missing file parameter"}), 400
+        
+        # Security: only allow YAML files in config directory
+        if not filename.endswith('.yaml') or '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({"error": "Invalid file name"}), 400
+        
+        # Determine config directory based on type
+        if config_type == 'run_env':
+            config_dir = project_root / "config" / "run_env_config"
+        elif config_type == 'agent':
+            config_dir = project_root / "config" / "agent_library" / "Default"
+        else:
+            return jsonify({"error": "Invalid config type"}), 400
+        
+        config_path = config_dir / filename
+        
+        # Security: ensure file is within config directory
+        try:
+            config_path.resolve().relative_to(config_dir.resolve())
+        except ValueError:
+            return jsonify({"error": "Invalid file path"}), 400
+        
+        if not config_path.exists():
+            return jsonify({"error": "File not found"}), 404
+        
+        if not config_path.is_file():
+            return jsonify({"error": "Path is not a file"}), 400
+        
+        # Read file content
+        try:
+            content = config_path.read_text(encoding='utf-8')
+        except Exception as e:
+            return jsonify({"error": f"Failed to read file: {str(e)}"}), 500
+        
+        return jsonify({
+            "content": content,
+            "filename": filename
+        })
+    except Exception as e:
+        import traceback
+        print(f"Read config file error: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/config/agent-tree', methods=['GET'])
+@login_required
+def get_agent_tree():
+    """Get agent hierarchy tree structure"""
+    try:
+        username = session.get('username')
+        if not username:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        # Load agent configurations
+        from utils.config_loader import ConfigLoader
+        config_loader = ConfigLoader('Default')
+        
+        # Build agent tree
+        all_agents = {}
+        
+        # First pass: collect all agents
+        for name, config in config_loader.all_tools.items():
+            if config.get("type") == "llm_call_agent":
+                level = config.get("level", 0)
+                available_tools = config.get("available_tools", [])
+                
+                all_agents[name] = {
+                    "name": name,
+                    "level": level,
+                    "available_tools": available_tools,
+                    "children": []  # Will be populated in second pass
+                }
+        
+        # Second pass: build tree structure
+        # Find child agents (agents that are in available_tools)
+        for name, agent in all_agents.items():
+            for tool in agent["available_tools"]:
+                if tool in all_agents:
+                    agent["children"].append(tool)
+        
+        # Find root agents (agents that are not children of any other agent)
+        root_agents = []
+        all_children = set()
+        for agent in all_agents.values():
+            all_children.update(agent["children"])
+        
+        for name in all_agents.keys():
+            if name not in all_children:
+                root_agents.append(name)
+        
+        # If no root agents found, use highest level agents
+        if not root_agents:
+            max_level = max([agent["level"] for agent in all_agents.values()], default=0)
+            for name, agent in all_agents.items():
+                if agent["level"] == max_level:
+                    root_agents.append(name)
+        
+        # Build tree starting from root agents
+        def build_tree_node(agent_name, visited=None):
+            if visited is None:
+                visited = set()
+            
+            if agent_name in visited:
+                return None  # Circular reference
+            
+            if agent_name not in all_agents:
+                return None
+            
+            visited.add(agent_name)
+            agent = all_agents[agent_name]
+            
+            node = {
+                "name": agent["name"],
+                "level": agent["level"],
+                "children": []
+            }
+            
+            # Add child agents
+            for child_name in agent["children"]:
+                child_node = build_tree_node(child_name, visited.copy())
+                if child_node:
+                    node["children"].append(child_node)
+            
+            return node
+        
+        # Build trees for all root agents
+        trees = []
+        for root_name in root_agents:
+            tree = build_tree_node(root_name)
+            if tree:
+                trees.append(tree)
+        
+        # If no root agents found, build from all agents
+        if not trees:
+            for name in all_agents.keys():
+                tree = build_tree_node(name)
+                if tree:
+                    trees.append(tree)
+        
+        return jsonify({
+            "trees": trees,
+            "all_agents": {name: {
+                "level": agent["level"]
+            } for name, agent in all_agents.items()}
+        })
+    except Exception as e:
+        import traceback
+        print(f"Get agent tree error: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/config/save', methods=['POST'])
+@login_required
+def save_config_file():
+    """Save configuration file content"""
+    try:
+        username = session.get('username')
+        if not username:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        data = request.json
+        filename = data.get('file', '')
+        content = data.get('content', '')
+        config_type = data.get('type', 'run_env')
+        
+        if not filename:
+            return jsonify({"error": "Missing file parameter"}), 400
+        
+        # Security: only allow YAML files in config directory
+        if not filename.endswith('.yaml') or '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({"error": "Invalid file name"}), 400
+        
+        # Determine config directory based on type
+        if config_type == 'run_env':
+            config_dir = project_root / "config" / "run_env_config"
+        elif config_type == 'agent':
+            config_dir = project_root / "config" / "agent_library" / "Default"
+        else:
+            return jsonify({"error": "Invalid config type"}), 400
+        
+        config_path = config_dir / filename
+        
+        # Security: ensure file is within config directory
+        try:
+            config_path.resolve().relative_to(config_dir.resolve())
+        except ValueError:
+            return jsonify({"error": "Invalid file path"}), 400
+        
+        # Validate YAML syntax before saving
+        try:
+            yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            return jsonify({"error": f"Invalid YAML syntax: {str(e)}"}), 400
+        
+        # Save file
+        try:
+            config_path.write_text(content, encoding='utf-8')
+        except Exception as e:
+            return jsonify({"error": f"Failed to save file: {str(e)}"}), 500
+        
+        return jsonify({"success": True, "message": f"Configuration saved successfully"})
+    except Exception as e:
+        import traceback
+        print(f"Save config file error: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     # Default to use port 4242 (5000 may be occupied by macOS AirPlay)
     port = int(os.environ.get('PORT', 4242))

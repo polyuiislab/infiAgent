@@ -93,6 +93,7 @@ const confirmTaskBtn = document.getElementById('confirm-task-btn');
 const clearTaskBtn = document.getElementById('clear-task-btn');
 const copyTaskBtn = document.getElementById('copy-task-btn');
 const downloadTaskBtn = document.getElementById('download-task-btn');
+const configBtn = document.getElementById('config-btn');
 // Fixed to use Default system
 const AGENT_SYSTEM = 'Default';
 const userInput = document.getElementById('user-input');
@@ -273,6 +274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearTaskBtn.addEventListener('click', clearTask);
     copyTaskBtn.addEventListener('click', copyTask);
     downloadTaskBtn.addEventListener('click', downloadTask);
+    configBtn.addEventListener('click', openConfigModal);
     sendBtn.addEventListener('click', sendMessage);
     stopBtn.addEventListener('click', stopTask);
     userInput.addEventListener('keydown', (e) => {
@@ -350,6 +352,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadFiles();
         }
     }, 5000);
+    
+    // Initialize configuration modal
+    initConfigModal();
 });
 
 // 加载聊天记录
@@ -2096,5 +2101,391 @@ function clearHILState() {
         stopHILTaskChecking();
         hilCheckInterval = setInterval(checkHILTask, 10000);
     }
+}
+
+// Configuration Modal Functions
+let currentConfigFile = 'llm_config.yaml';
+let currentConfigType = 'run_env'; // 'run_env' or 'agent'
+
+// Open configuration modal
+function openConfigModal() {
+    const modal = document.getElementById('config-modal');
+    modal.style.display = 'flex';
+    loadConfigFileLists();
+    // Load first file from run_env if available
+    loadConfigFile(currentConfigFile, currentConfigType);
+    // Switch to editor tab by default
+    switchConfigTab('editor');
+}
+
+// Close configuration modal
+function closeConfigModal() {
+    const modal = document.getElementById('config-modal');
+    modal.style.display = 'none';
+}
+
+// Load configuration file lists for both sections
+async function loadConfigFileLists() {
+    // Load run_env config files
+    try {
+        const runEnvResponse = await fetch('/api/config/list?type=run_env', {
+            credentials: 'include'
+        });
+        const runEnvData = await runEnvResponse.json();
+        
+        const runEnvList = document.getElementById('run-env-config-list');
+        runEnvList.innerHTML = '';
+        
+        if (runEnvData.files && runEnvData.files.length > 0) {
+            let firstFile = null;
+            runEnvData.files.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'config-file-item';
+                item.dataset.file = file.name;
+                item.dataset.type = 'run_env';
+                
+                // Set icon based on filename
+                let icon = 'fas fa-file-code';
+                if (file.name.includes('llm')) icon = 'fas fa-brain';
+                else if (file.name.includes('tool')) icon = 'fas fa-tools';
+                else if (file.name.includes('api')) icon = 'fas fa-plug';
+                else if (file.name.includes('gemini')) icon = 'fas fa-robot';
+                
+                item.innerHTML = `<i class="${icon}"></i> ${file.name}`;
+                item.addEventListener('click', () => {
+                    currentConfigFile = file.name;
+                    currentConfigType = 'run_env';
+                    loadConfigFile(file.name, 'run_env');
+                });
+                runEnvList.appendChild(item);
+                
+                // Remember first file
+                if (index === 0) {
+                    firstFile = file.name;
+                }
+            });
+            
+            // Auto-load first file if no file is currently selected
+            if (!currentConfigFile || currentConfigType !== 'run_env') {
+                if (firstFile) {
+                    currentConfigFile = firstFile;
+                    currentConfigType = 'run_env';
+                    loadConfigFile(firstFile, 'run_env');
+                }
+            }
+        } else {
+            runEnvList.innerHTML = '<div class="config-file-empty">No files found</div>';
+        }
+    } catch (error) {
+        console.error('Failed to load run_env config files:', error);
+    }
+    
+    // Load agent config files
+    try {
+        const agentResponse = await fetch('/api/config/list?type=agent', {
+            credentials: 'include'
+        });
+        const agentData = await agentResponse.json();
+        
+        const agentList = document.getElementById('agent-config-list');
+        agentList.innerHTML = '';
+        
+        if (agentData.files && agentData.files.length > 0) {
+            agentData.files.forEach(file => {
+                const item = document.createElement('div');
+                item.className = 'config-file-item';
+                item.dataset.file = file.name;
+                item.dataset.type = 'agent';
+                
+                // Set icon based on filename
+                let icon = 'fas fa-file-code';
+                if (file.name.includes('level_0')) icon = 'fas fa-wrench';
+                else if (file.name.includes('level_1')) icon = 'fas fa-layer-group';
+                else if (file.name.includes('level_2')) icon = 'fas fa-sitemap';
+                else if (file.name.includes('level_3')) icon = 'fas fa-crown';
+                else if (file.name.includes('judge')) icon = 'fas fa-gavel';
+                else if (file.name.includes('prompts')) icon = 'fas fa-comments';
+                
+                item.innerHTML = `<i class="${icon}"></i> ${file.name}`;
+                item.addEventListener('click', () => {
+                    currentConfigFile = file.name;
+                    currentConfigType = 'agent';
+                    loadConfigFile(file.name, 'agent');
+                });
+                agentList.appendChild(item);
+            });
+        } else {
+            agentList.innerHTML = '<div class="config-file-empty">No files found</div>';
+        }
+    } catch (error) {
+        console.error('Failed to load agent config files:', error);
+    }
+}
+
+// Load configuration file
+async function loadConfigFile(filename, type = 'run_env') {
+    const textarea = document.getElementById('config-editor-textarea');
+    const fileNameSpan = document.getElementById('config-file-name');
+    const statusDiv = document.getElementById('config-status');
+    
+    // Update active file item
+    document.querySelectorAll('.config-file-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.dataset.file === filename && item.dataset.type === type) {
+            item.classList.add('active');
+        }
+    });
+    
+    fileNameSpan.textContent = filename;
+    textarea.value = 'Loading...';
+    statusDiv.textContent = '';
+    statusDiv.className = 'config-status';
+    
+    try {
+        const response = await fetch(`/api/config/read?file=${encodeURIComponent(filename)}&type=${encodeURIComponent(type)}`, {
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            textarea.value = '';
+            statusDiv.textContent = `Error: ${data.error}`;
+            statusDiv.className = 'config-status error';
+        } else {
+            textarea.value = data.content;
+            statusDiv.textContent = 'File loaded successfully';
+            statusDiv.className = 'config-status success';
+            setTimeout(() => {
+                statusDiv.textContent = '';
+            }, 2000);
+        }
+    } catch (error) {
+        textarea.value = '';
+        statusDiv.textContent = `Failed to load file: ${error.message}`;
+        statusDiv.className = 'config-status error';
+    }
+}
+
+// Save configuration file
+async function saveConfigFile() {
+    const textarea = document.getElementById('config-editor-textarea');
+    const fileNameSpan = document.getElementById('config-file-name');
+    const statusDiv = document.getElementById('config-status');
+    const saveBtn = document.getElementById('save-config-btn');
+    
+    const filename = fileNameSpan.textContent;
+    const content = textarea.value;
+    
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    statusDiv.textContent = 'Saving...';
+    statusDiv.className = 'config-status';
+    
+    try {
+        const response = await fetch('/api/config/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                file: filename,
+                content: content,
+                type: currentConfigType
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            statusDiv.textContent = `Error: ${data.error}`;
+            statusDiv.className = 'config-status error';
+        } else {
+            statusDiv.textContent = data.message || 'Configuration saved successfully';
+            statusDiv.className = 'config-status success';
+        }
+    } catch (error) {
+        statusDiv.textContent = `Failed to save: ${error.message}`;
+        statusDiv.className = 'config-status error';
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+    }
+}
+
+// Switch config tab
+function switchConfigTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.config-tab').forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.dataset.tab === tabName) {
+            tab.classList.add('active');
+        }
+    });
+    
+    // Update tab content
+    document.querySelectorAll('.config-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    
+    if (tabName === 'editor') {
+        document.getElementById('tab-editor').classList.add('active');
+        document.getElementById('config-editor-actions').style.display = 'flex';
+    } else if (tabName === 'tree') {
+        document.getElementById('tab-tree').classList.add('active');
+        document.getElementById('config-editor-actions').style.display = 'none';
+        loadAgentTree();
+    }
+}
+
+// Load and render agent tree
+async function loadAgentTree() {
+    const container = document.getElementById('agent-tree-container');
+    container.innerHTML = '<div class="agent-tree-loading">Loading agent tree...</div>';
+    
+    try {
+        const response = await fetch('/api/config/agent-tree', {
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            container.innerHTML = `<div class="agent-tree-error">Error: ${data.error}</div>`;
+            return;
+        }
+        
+        // Render tree
+        container.innerHTML = '';
+        if (data.trees && data.trees.length > 0) {
+            data.trees.forEach(tree => {
+                const treeElement = renderAgentTreeNode(tree, 0);
+                container.appendChild(treeElement);
+            });
+        } else {
+            container.innerHTML = '<div class="agent-tree-empty">No agents found</div>';
+        }
+    } catch (error) {
+        container.innerHTML = `<div class="agent-tree-error">Failed to load agent tree: ${error.message}</div>`;
+    }
+}
+
+// Render a single agent tree node
+function renderAgentTreeNode(node, depth = 0) {
+    const nodeDiv = document.createElement('div');
+    nodeDiv.className = 'agent-tree-node';
+    
+    // Node content
+    const content = document.createElement('div');
+    content.className = 'agent-tree-node-content';
+    content.style.paddingLeft = `${depth * 24}px`;
+    
+    // Level badge
+    const levelBadge = document.createElement('span');
+    levelBadge.className = `agent-tree-level level-${node.level}`;
+    levelBadge.textContent = `L${node.level}`;
+    
+    // Agent name
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'agent-tree-name';
+    nameSpan.textContent = node.name;
+    
+    // Expand/collapse button (only if has children)
+    let expandBtn = null;
+    if (node.children && node.children.length > 0) {
+        expandBtn = document.createElement('button');
+        expandBtn.className = 'agent-tree-expand';
+        expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+    }
+    
+    content.appendChild(levelBadge);
+    content.appendChild(nameSpan);
+    if (expandBtn) {
+        content.appendChild(expandBtn);
+    }
+    
+    nodeDiv.appendChild(content);
+    
+    // Children container
+    const childrenDiv = document.createElement('div');
+    childrenDiv.className = 'agent-tree-children';
+    
+    // Render child agents
+    if (node.children && node.children.length > 0) {
+        node.children.forEach(child => {
+            const childElement = renderAgentTreeNode(child, depth + 1);
+            childrenDiv.appendChild(childElement);
+        });
+    }
+    
+    nodeDiv.appendChild(childrenDiv);
+    
+    // Toggle expand/collapse
+    if (expandBtn) {
+        let isExpanded = true;
+        expandBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isExpanded = !isExpanded;
+            if (isExpanded) {
+                childrenDiv.style.display = '';
+                expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+            } else {
+                childrenDiv.style.display = 'none';
+                expandBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+            }
+        });
+    }
+    
+    return nodeDiv;
+}
+
+// Initialize configuration modal event listeners (called in main DOMContentLoaded)
+function initConfigModal() {
+    // Close button
+    const closeConfigBtn = document.getElementById('close-config-btn');
+    if (closeConfigBtn) {
+        closeConfigBtn.addEventListener('click', closeConfigModal);
+    }
+    
+    // Tab switching
+    document.querySelectorAll('.config-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.dataset.tab;
+            switchConfigTab(tabName);
+        });
+    });
+    
+    // Save button
+    const saveConfigBtn = document.getElementById('save-config-btn');
+    if (saveConfigBtn) {
+        saveConfigBtn.addEventListener('click', saveConfigFile);
+    }
+    
+    // Reload button
+    const reloadConfigBtn = document.getElementById('reload-config-btn');
+    if (reloadConfigBtn) {
+        reloadConfigBtn.addEventListener('click', () => {
+            const fileNameSpan = document.getElementById('config-file-name');
+            loadConfigFile(fileNameSpan.textContent, currentConfigType);
+        });
+    }
+    
+    // Close modal when clicking outside
+    const configModal = document.getElementById('config-modal');
+    if (configModal) {
+        configModal.addEventListener('click', (e) => {
+            if (e.target === configModal) {
+                closeConfigModal();
+            }
+        });
+    }
+    
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && configModal && configModal.style.display === 'flex') {
+            closeConfigModal();
+        }
+    });
 }
 

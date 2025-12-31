@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 RUN playwright install --with-deps chromium
 
 # 创建必要的目录
-RUN mkdir -p /root/.config/mla /root/mla_v3 /workspace /mla_config
+RUN mkdir -p /root/.config/mla /root/mla_v3 /workspace /mla_config /var/log/supervisor /var/run
 
 # 复制 supervisor 配置（如果需要）
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
