@@ -16,7 +16,7 @@ from .file_tools import BaseTool, get_abs_path
 try:
     from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
     CRAWL4AI_AVAILABLE = True
-except ImportError:
+except (ImportError, TypeError, Exception):
     CRAWL4AI_AVAILABLE = False
 
 # DuckDuckGo 导入
