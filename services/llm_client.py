@@ -457,7 +457,7 @@ class SimpleLLMClient:
                         safe_print(f"   ✅ JSON 自动修复成功")
                     else:
                         safe_print(f"   ❌ JSON 修复失败，使用空参数")
-                        args = {,}
+                        args = {}
                 
                 final_tool_calls.append(ToolCall(
                     id=tc_data["id"] or f"call_{idx}",
