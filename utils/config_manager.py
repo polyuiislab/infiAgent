@@ -79,7 +79,7 @@ def set_config(key: str, value: str, config_name: str = "llm_config"):
             current[final_key] = json.loads(value)
         except json.JSONDecodeError:
             # 如果失败，按简单逗号分割处理
-        items = value[1:-1].split(',')
+            items = value[1:-1].split(',')
             current[final_key] = [item.strip().strip('"').strip("'") for item in items if item.strip()]
     else:
         current[final_key] = value

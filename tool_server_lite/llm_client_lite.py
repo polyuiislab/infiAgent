@@ -180,7 +180,8 @@ class LLMClientLite:
                 messages=messages,
                 temperature=self.temperature,
                 api_key=self.api_key,
-                api_base=self.base_url
+                api_base=self.base_url,
+                timeout=300  # 5分钟超时保护
             )
             
             # 提取响应
@@ -365,7 +366,8 @@ class LLMClientLite:
                     model="whisper-1",
                     file=str(audio_file),
                     api_key=self.api_key,
-                    api_base=self.base_url
+                    api_base=self.base_url,
+                    timeout=300  # 5分钟超时保护
                 )
                 
                 # 提取转录文本
@@ -403,7 +405,8 @@ class LLMClientLite:
                 messages=messages,
                 temperature=self.temperature,
                 api_key=self.api_key,
-                api_base=self.base_url
+                api_base=self.base_url,
+                timeout=300  # 5分钟超时保护
             )
             
             # 提取响应
@@ -455,7 +458,8 @@ class LLMClientLite:
                 messages=messages,
                 temperature=self.temperature,
                 api_key=self.api_key,
-                api_base=self.base_url
+                api_base=self.base_url,
+                timeout=300  # 5分钟超时保护
             )
             
             # 提取响应

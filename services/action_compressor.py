@@ -254,7 +254,7 @@ class ActionCompressor:
             model=self.llm_client.compressor_models[0],
             system_prompt=f"你是整体上下文构造专家。目标：将内容压缩到{target_tokens} tokens以内。",
             tool_list=[],
-            tool_choice="auto"
+            tool_choice="none"  # 压缩任务不使用工具
         )
         
         summary = response.output if response.status == "success" else "[总结失败]"
@@ -365,7 +365,7 @@ class ActionCompressor:
                     model=self.llm_client.compressor_models[0],
                     system_prompt=f"你是内容压缩专家。目标：将本段压缩到{target_per_chunk} tokens以内。",
                     tool_list=[],
-                    tool_choice="auto"
+                    tool_choice="none"  # 压缩任务不使用工具
                 )
                 
                 if response.status == "success":
@@ -573,7 +573,7 @@ class ActionCompressor:
                 model=self.llm_client.compressor_models[0],
                 system_prompt=f"你是智能内容压缩助手。目标：将{content_type}压缩到{target_tokens} tokens，同时保留核心信息。",
                 tool_list=[],
-                tool_choice="auto"
+                tool_choice="none"  # 压缩任务不使用工具
             )
             
             compressed = response.output if response.status == "success" else text[:1000] + "\n[压缩失败，仅保留前1000字符]"
@@ -697,7 +697,7 @@ class ActionCompressor:
                     model=self.llm_client.compressor_models[0],
                     system_prompt=f"压缩专家。目标：将本段压缩到{target_per_chunk} tokens。",
                     tool_list=[],
-                    tool_choice="auto"
+                    tool_choice="none"  # 压缩任务不使用工具
                 )
                 
                 if response.status == "success":

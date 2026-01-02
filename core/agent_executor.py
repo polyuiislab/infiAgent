@@ -164,12 +164,14 @@ class AgentExecutor:
                 )
                 
                 # 调用LLM（history永远只有一条）
-                history = [ChatMessage(role="user", content="请输出下一个动作")]
+                #history = [ChatMessage(role="user", content="请输出下一个动作")]
+                history = [ChatMessage(role="user", content="<历史动作>是你之前已经执行的动作，不要重复<历史动作>内的动作！！请输出下一个动作")]
                 
                 safe_print(f"🤖 调用LLM: {self.model_type}")
                 safe_print(f"   📝 System Prompt长度: {len(full_system_prompt)} 字符")
                 safe_print(f"   🔧 可用工具: {len(self.available_tools)} 个")
                 
+                # 调用LLM（重试机制已在 llm_client 内部实现）
                 llm_response = self.llm_client.chat(
                     history=history,
                     model=self.model_type,
