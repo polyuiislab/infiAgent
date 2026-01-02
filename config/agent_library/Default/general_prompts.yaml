@@ -33,9 +33,7 @@ system_prompt_xml: |
   
   <严格输出格式>
   只有完成任务才可以使用 final_output工具输出！
-  final_output输出应该严格按照以下示例
-  **JSON Object**:
-  {{
+  final_output输出各字段要求如下
     "status":  "success" | "error",
     "output": "
     我完成/未完成[任务描述]。任务完成的情况概述是[完成概述]
@@ -49,7 +47,6 @@ system_prompt_xml: |
       ...
     ",
     "error_information": "任务未完成的原因"
-  }}
   任务相关的最终文件：用户所需的文件
   其他中间文件：你调用其他智能体产生的和最终结果非直接相关的文件
   除非是聊天需求，否则严格遵循output的输出格式，不要自己添加其他内容。

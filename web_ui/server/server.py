@@ -725,10 +725,10 @@ def run_task():
                         output_queue.put(frontend_event)
                 except json.JSONDecodeError:
                     pass
-            
-            # Wait for process to end
-            process.wait()
-            
+                
+                # Wait for process to end
+                process.wait()
+                
             # Send end message if not already received
             if not end_event_received:
                 if user_execution.get('stop_requested', False):
@@ -753,7 +753,7 @@ def run_task():
                         "timestamp": datetime.now().isoformat()
                     })
             
-            output_queue.put(None)  # End marker
+                output_queue.put(None)  # End marker
             
         except Exception as e:
             import traceback
@@ -1256,6 +1256,35 @@ def clear_task():
         # Recursively delete entire directory
         import shutil
         shutil.rmtree(task_path)
+        
+        # Also delete corresponding conversation files in home directory
+        # Generate task_hash and task_folder same way as hierarchy_manager
+        # Use absolute path (task_path) to ensure hash matches what was used during storage
+        import hashlib
+        import os
+        from pathlib import Path
+        
+        task_id_for_hash = str(task_path)  # Use absolute path for consistent hashing
+        task_hash = hashlib.md5(task_id_for_hash.encode()).hexdigest()[:8]
+        task_folder = Path(task_id_for_hash).name if (os.sep in task_id_for_hash or '/' in task_id_for_hash or '\\' in task_id_for_hash) else task_id_for_hash
+        task_name = f"{task_hash}_{task_folder}"
+        
+        # Delete all files matching the pattern in home conversations directory
+        conversations_dir = Path.home() / "mla_v3" / "conversations"
+        if conversations_dir.exists():
+            deleted_files = []
+            # Pattern: {task_hash}_{task_folder}_*.json
+            pattern = f"{task_name}_*.json"
+            for file_path in conversations_dir.glob(pattern):
+                try:
+                    file_path.unlink()
+                    deleted_files.append(file_path.name)
+                except Exception as e:
+                    # Log but don't fail if file deletion fails
+                    print(f"⚠️ 删除对话历史文件失败: {file_path.name} - {e}")
+            
+            if deleted_files:
+                print(f"✅ 已删除主目录下的对话历史文件: {len(deleted_files)} 个文件")
         
         return jsonify({
             "success": True,

@@ -220,21 +220,43 @@ web_ui/
 
 ## 数据存储
 
-### 对话历史
+### 存储位置
 
-所有对话历史和相关数据存储在任务目录下：
+系统使用两个存储位置来管理不同类别的数据：
+
+#### 1. Workspace 目录 (`{task_id}/`)
+
+任务工作目录，存储任务相关的工作文件：
 
 ```
 {task_id}/
-├── conversations/             # 对话历史目录
-│   ├── _stack.json           # Agent 调用栈
-│   ├── _share_context.json   # 共享上下文
-│   └── {agent_id}_actions.json  # Agent 动作历史
-├── chat_history.json         # Web UI 聊天记录（前端显示）
-└── latest_output.json        # 最新输出（用于快速预览）
+├── temp/                      # 临时文件目录
+├── code_run/                  # 代码执行目录
+├── code_env/                  # 代码环境目录
+├── reference.bib              # 参考文件
+├── chat_history.json          # Web UI 聊天记录（前端显示）
+└── latest_output.json         # 最新输出（用于快速预览）
 ```
 
-**注意**：删除 `task_id` 目录会同时删除所有相关数据，包括对话历史。
+**注意**：删除 `task_id` 目录会删除所有任务相关的工作文件和 Web UI 聊天记录。
+
+#### 2. 主目录 (`~/mla_v3/conversations/`)
+
+Agent 对话历史和状态存储位置：
+
+```
+~/mla_v3/conversations/
+├── {task_hash}_{task_folder}_stack.json           # Agent 调用栈
+├── {task_hash}_{task_folder}_share_context.json   # 共享上下文
+└── {task_hash}_{task_folder}_{agent_id}_actions.json  # Agent 动作历史
+```
+
+其中：
+- `task_hash`: task_id 的 MD5 前 8 位
+- `task_folder`: 如果 task_id 是路径，取最后一级文件夹名；否则使用 task_id 本身
+- `agent_id`: Agent 的唯一标识符
+
+**注意**：删除此目录会删除所有任务的 Agent 对话历史。如果要清理特定任务的历史，可以根据文件名前缀（`{task_hash}_{task_folder}`）来识别和删除。
 
 ## 故障排除
 

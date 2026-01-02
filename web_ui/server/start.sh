@@ -76,7 +76,7 @@ fi
 # 检查工具服务器是否已在运行（通过 health endpoint）
 if curl -s "http://127.0.0.1:$TOOL_SERVER_PORT/health" > /dev/null 2>&1; then
     printf "   ✅ 工具服务器已在运行（端口: %s）\n" "$TOOL_SERVER_PORT"
-else
+    else
     # 尝试启动工具服务器
     printf "   🚀 启动工具服务器（端口: %s）...\n" "$TOOL_SERVER_PORT"
     
