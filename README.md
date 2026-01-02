@@ -39,14 +39,16 @@ The default configuration in this repository is a **research-oriented semi-speci
 
 ### Update
 
-- Install and how use vedio please click <a href="https://www.bilibili.com/video/BV142vQB2EDu/?share_source=copy_web&vd_source=8f099df5d40b73e936381e57d7fc05aa
+- [2026/01/03] Optimize LiteLLM’s native retry mechanism by enhancing error-aware retry prompts to improve small-model call success rates; add connection timeout detection to reduce task interruption risks.
+
+- [2026/01/02] Install and how use vedio please click <a href="https://www.bilibili.com/video/BV142vQB2EDu/?share_source=copy_web&vd_source=8f099df5d40b73e936381e57d7fc05aa
 ">infiagent:全自动写作工具</a>
 
-- fix some bugs about reference manage, Please clone latest repo or pull latest docker image: chenglinhku/mlav3.
+- [2026/01/02] fix some bugs about reference manage, Please clone latest repo or pull latest docker image: chenglinhku/mlav3.
 
-- support web_ui and qwen api. Also fix some problem when using third part oepnai format api. please using latest chenglinhku/mlav3 docker image and see the example configs.
+- [2026/01/01] support web_ui and qwen api. Also fix some problem when using third part oepnai format api. please using latest chenglinhku/mlav3 docker image and see the example configs.
 
-- support gemini api key from google ai studio now. Please See the gemini config in dir. 2025/12/31
+- [2025/12/31] support gemini api key from google ai studio now. Please See the gemini config in dir. 
 
 
 Attention: Current coding task only support python project. Other language may supported later. In old version execute_command only support safe command like cd or grep，now it include every commands including rm. Please try to use it in docker mode if your task may edit system file.
