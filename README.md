@@ -39,6 +39,8 @@ The default configuration in this repository is a **research-oriented semi-speci
 
 ### Update
 
+If you pulled the image or code before the latest update date, please refer to the issues that have been fixed and, based on your needs, pull the image and code again.
+
 - [2026/01/04] Support different Language of Agent output base on user input.
 
 - [2026/01/03] Optimize LiteLLM’s native retry mechanism by enhancing error-aware retry prompts to improve small-model call success rates; add connection timeout detection to reduce task interruption risks.
