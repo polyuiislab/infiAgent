@@ -2313,15 +2313,20 @@ def read_config_file():
         config_path = config_dir / filename
         
         # Security: ensure file is within config directory
+        # For symlinks, check the symlink path itself (not the resolved target)
+        # This allows symlinks that point outside the config dir (e.g., /mla_config)
         try:
-            config_path.resolve().relative_to(config_dir.resolve())
+            # Check if the path itself (not resolved) is within config directory
+            # Use resolve() only on config_dir to get absolute path, not on config_path
+            config_path.relative_to(config_dir.resolve())
         except ValueError:
             return jsonify({"error": "Invalid file path"}), 400
         
         if not config_path.exists():
             return jsonify({"error": "File not found"}), 404
         
-        if not config_path.is_file():
+        # Check if it's a file or a valid symlink to a file
+        if not config_path.is_file() and not (config_path.is_symlink() and config_path.resolve().is_file()):
             return jsonify({"error": "Path is not a file"}), 400
         
         # Read file content
@@ -2479,8 +2484,12 @@ def save_config_file():
         config_path = config_dir / filename
         
         # Security: ensure file is within config directory
+        # For symlinks, check the symlink path itself (not the resolved target)
+        # This allows symlinks that point outside the config dir (e.g., /mla_config)
         try:
-            config_path.resolve().relative_to(config_dir.resolve())
+            # Check if the path itself (not resolved) is within config directory
+            # Use resolve() only on config_dir to get absolute path, not on config_path
+            config_path.relative_to(config_dir.resolve())
         except ValueError:
             return jsonify({"error": "Invalid file path"}), 400
         
