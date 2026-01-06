@@ -43,6 +43,8 @@
 
 如果你在最新更新日期前拉取镜像或者代码，请参考修复的问题，重新拉取镜像和代码。
 
+- [2026/01/06] Web UI：新增入口智能体选择功能，可在 Task ID 左侧选择作为对话入口的智能体，并在同一界面展示该智能体为根的 agent tree（包含名称、层级和描述）。
+
 - [2026/01/05] 解决网络死锁问题（首token 卡死） ！重要更新！建议更新最新镜像或者拉取代码！
 
 - [2026/01/04] 支持智能体基于用户回复输出不同交互语言，
@@ -152,7 +154,7 @@ docker run -d --name mla \
 <p align="center">
   <img src="assets/web_ui.png" alt="Paper Generation Demo 2" width="800">
 </p>
-
+📖 **Web UI 使用与界面说明**：详见 `web_ui/README.md`。
 ### 方式 B: CLI 模式
 
 ```bash

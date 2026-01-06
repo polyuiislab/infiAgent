@@ -7,6 +7,7 @@
 - 🎨 现代化的对话界面
 - 🤖 显示当前执行的 Agent（带头像）
 - 📂 显示 Task ID 和 Workspace 路径
+- 🧭 **可视化入口 Agent 选择器**：在 Task ID 左侧选择对话入口智能体，并实时展示该智能体为根的 Agent Tree（包含名称、层级和描述）
 - 📊 实时流式输出（JSONL 事件流）
 - 🔔 **Human-in-Loop (HIL) 交互支持**：自动检测并响应 Agent 的人类交互任务
 - 💬 支持多行输入和 Enter 发送
@@ -128,8 +129,14 @@ flask-cors
 
 ### 2. Agent 配置
 
-- 当前版本固定使用 `alpha_agent` 和 `Default` 系统
-- 无需手动选择，系统会自动使用正确的配置
+- **入口 Agent 选择**：
+  - 在 Task ID 左侧有一个 **Select Agent** 按钮，默认入口 Agent 为 `alpha_agent`
+  - 点击后会弹出 Agent 选择面板，左侧展示所有可用 Agent 列表（包含名称、层级、描述），右侧展示以当前选中 Agent 作为根节点的 **Agent Tree**
+  - 你可以通过列表选择任意 Agent 作为本次对话的入口智能体，后续所有对话都会从该 Agent 开始编排调用
+  - 选择结果会保存在浏览器本地（localStorage），刷新页面后仍会保持
+- **Agent 系统**：
+  - 当前版本固定使用 `Default` 系统（`config/agent_library/Default`）
+  - Agent 体系结构请参考主仓库 `README` 中的配置说明
 
 ### 3. 输入任务
 
@@ -172,8 +179,9 @@ Agent 的执行输出会实时显示在对话窗口中：
 ## 界面说明
 
 ### 顶部控制栏
+- **Select Agent**：入口智能体选择按钮，点击后可在弹窗中选择对话入口 Agent，并查看对应 Agent Tree
 - **Task ID**: 任务工作目录路径（支持任务选择下拉框）
-- **Agent**: 固定使用 `alpha_agent`
+- **Agent**: 当前选中的入口 Agent（默认 `alpha_agent`）
 - **System**: 固定使用 `Default` 系统
 - **文件浏览器**: 右侧可浏览和管理任务文件
 
