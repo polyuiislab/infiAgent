@@ -125,13 +125,13 @@ agent可以调用的所有工具和参数信息
             #safe_print(analysis_request)           
             history = [ChatMessage(role="user", content=analysis_request)]
             
-            # 使用第一个可用模型，明确禁止使用工具
+            # 使用第一个可用模型，不使用工具
             response = self.llm_client.chat(
                 history=history,
                 model=self.llm_client.models[0],
                 system_prompt=self.system_prompt,
-                tool_list=[],  # Thinking不使用工具
-                tool_choice="none"  # 明确告诉模型：不要调用工具
+                tool_list=[],  # 空列表表示不使用工具
+                tool_choice="none"  # 明确表示不调用工具
             )
             
             if response.status == "success":
@@ -225,8 +225,8 @@ Agent的完整上下文（包含系统角色、历史动作等）：
                 history=history,
                 model=self.llm_client.models[0],
                 system_prompt=self.system_prompt,
-                tool_list=[],
-                tool_choice="none"  # 明确告诉模型：不要调用工具
+                tool_list=[],  # 空列表表示不使用工具
+                tool_choice="none"  # 明确表示不调用工具
             )
             
             if response.status == "success":

@@ -292,14 +292,15 @@ class SimpleLLMClient:
             if max_tokens > 0:
                 kwargs["max_tokens"] = max_tokens
             
-            # 添加工具定义
+            # 添加工具定义（只有当工具列表非空时才添加工具相关参数）
             if tools_definition:
+                # 工具列表非空：正常添加工具参数
                 kwargs["tools"] = tools_definition
                 if tool_choice == "required":
                     kwargs["tool_choice"] = "required"
                 kwargs["parallel_tool_calls"] = False
-            elif tool_choice == "none":
-                kwargs["tool_choice"] = "none"
+            # 注意：当 tools_definition 为空时，即使 tool_choice="none" 也不添加任何参数
+            # 这避免了 API 错误：When using `tool_choice`, `tools` must be set
             
             # 添加模型特定的额外参数
             model_extra_params = self.model_configs.get(model, {})
@@ -359,19 +360,19 @@ class SimpleLLMClient:
                             response_model = first_chunk.model
                         
                         # 打印首包
-                        try:
-                            safe_print(f"\n[chunk #1] {first_chunk}", flush=True)
-                        except Exception:
-                            pass
+                        # try:
+                        #     safe_print(f"\n[chunk #1] {first_chunk}", flush=True)
+                        # except Exception:
+                        #     pass
 
                         if first_chunk.choices:
                             delta = first_chunk.choices[0].delta
                             if hasattr(delta, 'content') and delta.content:
                                 accumulated_content += delta.content
-                                try:
-                                    safe_print(delta.content, end="", flush=True)
-                                except Exception:
-                                    pass
+                                # try:
+                                #     safe_print(delta.content, end="", flush=True)
+                                # except Exception:
+                                #     pass
                             
                             if hasattr(delta, 'tool_calls') and delta.tool_calls:
                                 for tc in delta.tool_calls:

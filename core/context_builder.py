@@ -282,8 +282,8 @@ class ContextBuilder:
             history=history_messages,
             model=self.llm_client.models[0],
             system_prompt="你是一个专业的内容总结助手。请简洁明了地总结历史交互信息。",
-            tool_list=[],
-            tool_choice="auto"
+            tool_list=[],  # 空列表表示不使用工具
+            tool_choice="none"  # 明确表示不调用工具（总结任务）
         )
         
         if response.status != "success":

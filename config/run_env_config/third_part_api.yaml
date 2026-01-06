@@ -3,6 +3,9 @@ max_tokens: 0
 max_context_window: 200000
 base_url: your provider'url for example: https://XXXX.top/v1 / 你供应商提供的 url
 api_key: yourkey
+timeout: 600              # LiteLLM 原生：建立连接及整体响应的最大等待时间 
+stream_timeout: 20        # LiteLLM 原生：两个流式数据块之间的最大间隔时间
+first_chunk_timeout: 20   # 应用层强制：连接建立+首包接收的最大时间（防止连接池死锁）
 models:
 # 如果供应商提供的是 openai 格式前缀填写openai,如果是anthropic格式前缀填写anthropic
 # 注意前缀名称和站点模型无关，前缀后再填写运营商提供的模型名称，例如 openrouter 提供

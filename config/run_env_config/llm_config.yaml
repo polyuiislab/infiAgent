@@ -2,7 +2,7 @@ temperature: 0
 max_tokens: 0
 max_context_window: 200000
 base_url: https://openrouter.ai/api/v1
-api_key: 
+api_key: yourkey
 # 超时配置（秒）
 timeout: 600              # LiteLLM 原生：建立连接及整体响应的最大等待时间 
 stream_timeout: 20        # LiteLLM 原生：两个流式数据块之间的最大间隔时间
@@ -15,4 +15,9 @@ compressor_models:
 - openai/google/gemini-3-flash-preview
 read_figure_models:
 - openai/google/gemini-3-flash-preview
+
+
+
+
+
 
