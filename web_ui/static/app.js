@@ -94,8 +94,19 @@ const clearTaskBtn = document.getElementById('clear-task-btn');
 const copyTaskBtn = document.getElementById('copy-task-btn');
 const downloadTaskBtn = document.getElementById('download-task-btn');
 const configBtn = document.getElementById('config-btn');
+const agentSelectBtn = document.getElementById('agent-select-btn');
+const agentSelectText = document.getElementById('agent-select-text');
+const agentSelectModal = document.getElementById('agent-select-modal');
+const closeAgentSelectBtn = document.getElementById('close-agent-select-btn');
+const agentSelectList = document.getElementById('agent-select-list');
+const agentSearchInput = document.getElementById('agent-search-input');
+const agentTreePanel = document.getElementById('agent-tree-panel');
+const agentTreePanelContent = document.getElementById('agent-tree-panel-content');
 // Fixed to use Default system
 const AGENT_SYSTEM = 'Default';
+
+// Current selected agent (default: alpha_agent)
+let selectedAgent = localStorage.getItem('mla_selected_agent') || 'alpha_agent';
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 const stopBtn = document.getElementById('stop-btn');
@@ -220,7 +231,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     updateWorkspacePath();
-    // Agent selection removed, always use alpha_agent
+    
+    // Initialize agent selection
+    initAgentSelection();
     
     // If task_id already has a value，自动加载聊天记录
     const taskId = taskIdInput.value.trim();
@@ -1494,12 +1507,296 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Agent selection removed, always use alpha_agent
+// Agent selection functions
+function updateAgentSelectButton() {
+    if (agentSelectText) {
+        agentSelectText.textContent = selectedAgent;
+    }
+}
+
+// Load agents list
+async function loadAgentsList() {
+    try {
+        const response = await fetch('/api/agents?agent_system=' + AGENT_SYSTEM, {
+            credentials: 'include'
+        });
+        const data = await response.json();
+        
+        if (data.error) {
+            agentSelectList.innerHTML = `<div class="agent-select-error">Error: ${data.error}</div>`;
+            return;
+        }
+        
+        return data.agents || [];
+    } catch (error) {
+        console.error('Failed to load agents:', error);
+        agentSelectList.innerHTML = `<div class="agent-select-error">Failed to load agents: ${error.message}</div>`;
+        return [];
+    }
+}
+
+// Render agents list
+function renderAgentsList(agents, searchTerm = '') {
+    if (!agentSelectList) return;
+    
+    if (agents.length === 0) {
+        agentSelectList.innerHTML = '<div class="agent-select-empty">No agents found</div>';
+        return;
+    }
+    
+    // Filter agents by search term
+    const filteredAgents = searchTerm 
+        ? agents.filter(agent => 
+            agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (agent.description && agent.description.toLowerCase().includes(searchTerm.toLowerCase()))
+          )
+        : agents;
+    
+    if (filteredAgents.length === 0) {
+        agentSelectList.innerHTML = '<div class="agent-select-empty">No agents match your search</div>';
+        return;
+    }
+    
+    // Group by level
+    const agentsByLevel = {};
+    filteredAgents.forEach(agent => {
+        const level = agent.level || 0;
+        if (!agentsByLevel[level]) {
+            agentsByLevel[level] = [];
+        }
+        agentsByLevel[level].push(agent);
+    });
+    
+    // Render
+    let html = '';
+    const levels = Object.keys(agentsByLevel).sort((a, b) => parseInt(b) - parseInt(a));
+    
+    levels.forEach(level => {
+        html += `<div class="agent-select-level-group">
+            <div class="agent-select-level-header">Level ${level}</div>
+            <div class="agent-select-level-agents">`;
+        
+        agentsByLevel[level].forEach(agent => {
+            const isSelected = agent.name === selectedAgent;
+            html += `<div class="agent-select-item ${isSelected ? 'selected' : ''}" data-agent-name="${agent.name}">
+                <div class="agent-select-item-header">
+                    <span class="agent-select-item-name">${agent.name}</span>
+                    <span class="agent-select-item-level">L${level}</span>
+                </div>
+                ${agent.description ? `<div class="agent-select-item-description">${agent.description}</div>` : ''}
+            </div>`;
+        });
+        
+        html += `</div></div>`;
+    });
+    
+    agentSelectList.innerHTML = html;
+    
+    // Add click handlers
+    agentSelectList.querySelectorAll('.agent-select-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const agentName = item.getAttribute('data-agent-name');
+            selectAgent(agentName);
+        });
+    });
+}
+
+// Select agent
+async function selectAgent(agentName) {
+    selectedAgent = agentName;
+    localStorage.setItem('mla_selected_agent', agentName);
+    updateAgentSelectButton();
+    
+    // Load and display agent tree (keep modal open to show tree)
+    await loadAgentTreeForAgent(agentName);
+    
+    // Update selected state in list
+    if (agentSelectList) {
+        agentSelectList.querySelectorAll('.agent-select-item').forEach(item => {
+            const itemAgentName = item.getAttribute('data-agent-name');
+            if (itemAgentName === agentName) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+}
+
+// Load agent tree for specific agent
+async function loadAgentTreeForAgent(agentName) {
+    if (!agentTreePanelContent) return;
+    
+    agentTreePanelContent.innerHTML = '<div class="agent-tree-loading">Loading agent tree...</div>';
+    
+    try {
+        const response = await fetch(`/api/config/agent-tree?root_agent=${encodeURIComponent(agentName)}`, {
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            agentTreePanelContent.innerHTML = `<div class="agent-tree-error">Error: ${data.error}</div>`;
+            return;
+        }
+        
+        // Render tree
+        agentTreePanelContent.innerHTML = '';
+        if (data.trees && data.trees.length > 0) {
+            const treeElement = renderAgentTreeNodeForPanel(data.trees[0], 0, true);
+            agentTreePanelContent.appendChild(treeElement);
+        } else {
+            agentTreePanelContent.innerHTML = '<div class="agent-tree-empty">No tree found</div>';
+        }
+    } catch (error) {
+        console.error('Failed to load agent tree:', error);
+        agentTreePanelContent.innerHTML = `<div class="agent-tree-error">Failed to load agent tree: ${error.message}</div>`;
+    }
+}
+
+// Render agent tree node for panel
+function renderAgentTreeNodeForPanel(node, depth = 0, isRoot = false) {
+    const nodeDiv = document.createElement('div');
+    nodeDiv.className = `agent-tree-node ${isRoot ? 'root' : ''}`;
+    
+    // Node content
+    const content = document.createElement('div');
+    content.className = 'agent-tree-node-content';
+    content.style.paddingLeft = `${depth * 24}px`;
+    
+    // Level badge
+    const levelBadge = document.createElement('span');
+    levelBadge.className = `agent-tree-level level-${node.level}`;
+    levelBadge.textContent = `L${node.level}`;
+    
+    // Agent name
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'agent-tree-name';
+    nameSpan.textContent = node.name;
+    
+    // Expand/collapse button (only if has children)
+    let expandBtn = null;
+    if (node.children && node.children.length > 0) {
+        expandBtn = document.createElement('button');
+        expandBtn.className = 'agent-tree-expand';
+        expandBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+    }
+    
+    content.appendChild(levelBadge);
+    content.appendChild(nameSpan);
+    if (expandBtn) {
+        content.appendChild(expandBtn);
+    }
+    
+    nodeDiv.appendChild(content);
+    
+    // Children container
+    const childrenDiv = document.createElement('div');
+    childrenDiv.className = 'agent-tree-children';
+    childrenDiv.style.display = 'block'; // Default expanded
+    
+    // Render child agents
+    if (node.children && node.children.length > 0) {
+        node.children.forEach(child => {
+            const childElement = renderAgentTreeNodeForPanel(child, depth + 1, false);
+            childrenDiv.appendChild(childElement);
+        });
+    }
+    
+    nodeDiv.appendChild(childrenDiv);
+    
+    // Toggle expand/collapse
+    if (expandBtn) {
+        let isExpanded = true;
+        expandBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isExpanded = !isExpanded;
+            childrenDiv.style.display = isExpanded ? 'block' : 'none';
+            expandBtn.innerHTML = isExpanded 
+                ? '<i class="fas fa-chevron-down"></i>' 
+                : '<i class="fas fa-chevron-right"></i>';
+        });
+    }
+    
+    return nodeDiv;
+}
+
+// Open agent select modal
+async function openAgentSelectModal() {
+    if (!agentSelectModal) return;
+    
+    agentSelectModal.style.display = 'flex';
+    agentSelectList.innerHTML = '<div class="agent-select-loading">Loading agents...</div>';
+    
+    // Load agents list
+    const agents = await loadAgentsList();
+    renderAgentsList(agents);
+    
+    // Load current agent tree if available
+    if (selectedAgent) {
+        await loadAgentTreeForAgent(selectedAgent);
+    } else {
+        if (agentTreePanelContent) {
+            agentTreePanelContent.innerHTML = '<div class="agent-tree-empty">Select an agent to view tree</div>';
+        }
+    }
+    
+    // Focus search input
+    if (agentSearchInput) {
+        agentSearchInput.focus();
+    }
+}
+
+// Close agent select modal
+function closeAgentSelectModal() {
+    if (agentSelectModal) {
+        agentSelectModal.style.display = 'none';
+    }
+    if (agentSearchInput) {
+        agentSearchInput.value = '';
+    }
+}
+
+// Initialize agent selection
+function initAgentSelection() {
+    updateAgentSelectButton();
+    
+    // Event listeners
+    if (agentSelectBtn) {
+        agentSelectBtn.addEventListener('click', openAgentSelectModal);
+    }
+    
+    if (closeAgentSelectBtn) {
+        closeAgentSelectBtn.addEventListener('click', closeAgentSelectModal);
+    }
+    
+    // Search functionality
+    if (agentSearchInput) {
+        let searchTimeout;
+        agentSearchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                const agents = await loadAgentsList();
+                renderAgentsList(agents, e.target.value);
+            }, 300);
+        });
+    }
+    
+    // Close modal on outside click
+    if (agentSelectModal) {
+        agentSelectModal.addEventListener('click', (e) => {
+            if (e.target === agentSelectModal) {
+                closeAgentSelectModal();
+            }
+        });
+    }
+}
 
 // 发送消息
 async function sendMessage() {
     const taskId = taskIdInput.value.trim();
-    const agentName = 'alpha_agent';  // Always use alpha_agent
+    const agentName = selectedAgent || 'alpha_agent';  // Use selected agent
     const userInputText = userInput.value.trim();
     const agentSystem = AGENT_SYSTEM;  // Fixed to use Default
     

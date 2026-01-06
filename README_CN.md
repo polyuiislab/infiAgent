@@ -68,16 +68,22 @@
 
 MLA完成的完整论文
 
-**演示 1：**
+**Demo 1:**
 
 <p align="center">
-  <img src="assets/paper_generation_demo_1.gif" alt="论文生成演示 1" width="800">
+  <img src="assets/paper_generation_demo_1.gif" alt="Paper Generation Demo 1" width="800">
 </p>
 
-**演示 2：**
+**Demo 2:**
 
 <p align="center">
-  <img src="assets/paper_generation_demo_2.gif" alt="论文生成演示 2" width="800">
+  <img src="assets/paper1.png" alt="Paper Generation Demo 2" width="800">
+</p>
+
+**Demo 3:**
+
+<p align="center">
+  <img src="assets/paper2.png" alt="Paper Generation Demo 3" width="800">
 </p>
 
 MLA 处理整个研究工作流程——从文献搜索和实验设计到代码执行、图表生成和 LaTeX 论文撰写。全部通过多层级智能体自动编排完成。

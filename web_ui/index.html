@@ -20,6 +20,9 @@
                     <div class="control-group">
                         <label for="task-id">Task ID:</label>
                         <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <button id="agent-select-btn" class="btn-secondary" title="Select Agent" style="min-width: 150px; white-space: nowrap;">
+                                <i class="fas fa-robot"></i> <span id="agent-select-text">alpha_agent</span>
+                            </button>
                             <select id="task-select" style="min-width: 150px;">
                                 <option value="">Select existing task</option>
                             </select>
@@ -89,6 +92,34 @@
                                 </div>
                             </div>
                             <div class="config-status" id="config-status"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agent Selection Modal -->
+        <div id="agent-select-modal" class="agent-select-modal" style="display: none;">
+            <div class="agent-select-modal-content">
+                <div class="agent-select-modal-header">
+                    <h2><i class="fas fa-robot"></i> Select Agent</h2>
+                    <button id="close-agent-select-btn" class="btn-icon" title="Close"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="agent-select-modal-body">
+                    <div class="agent-select-left">
+                        <div class="agent-select-search">
+                            <input type="text" id="agent-search-input" placeholder="Search agents..." autocomplete="off">
+                        </div>
+                        <div class="agent-select-list" id="agent-select-list">
+                            <div class="agent-select-loading">Loading agents...</div>
+                        </div>
+                    </div>
+                    <div class="agent-select-right" id="agent-tree-panel">
+                        <div class="agent-tree-panel-header">
+                            <h3><i class="fas fa-sitemap"></i> Agent Tree</h3>
+                        </div>
+                        <div class="agent-tree-panel-content" id="agent-tree-panel-content">
+                            <div class="agent-tree-empty">Select an agent to view tree</div>
                         </div>
                     </div>
                 </div>
