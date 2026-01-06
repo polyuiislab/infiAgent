@@ -1548,3 +1548,309 @@ body {
     background: rgba(0, 212, 255, 0.5);
 }
 
+/* Agent Selection Modal */
+.agent-select-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10001;
+    animation: fadeIn 0.3s ease;
+}
+
+.agent-select-modal-content {
+    background: linear-gradient(135deg, rgba(20, 30, 50, 0.98) 0%, rgba(15, 25, 40, 0.98) 100%);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 1400px;
+    height: 80vh;
+    max-height: 800px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 212, 255, 0.1);
+    animation: fadeInUp 0.3s ease;
+}
+
+.agent-select-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+    flex-shrink: 0;
+}
+
+.agent-select-modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    color: #ffffff;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agent-select-modal-header h2 i {
+    color: #00d4ff;
+}
+
+.agent-select-modal-body {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    overflow: hidden;
+    gap: 20px;
+    padding: 20px;
+}
+
+.agent-select-left {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.agent-select-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border-left: 1px solid rgba(0, 212, 255, 0.2);
+    padding-left: 20px;
+}
+
+.agent-select-search {
+    margin-bottom: 16px;
+    flex-shrink: 0;
+}
+
+.agent-select-search input {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(10, 15, 25, 0.6);
+    border: 1px solid rgba(0, 212, 255, 0.2);
+    border-radius: 8px;
+    color: #e0e6ed;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.agent-select-search input:focus {
+    outline: none;
+    border-color: rgba(0, 212, 255, 0.5);
+    background: rgba(10, 15, 25, 0.8);
+    box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+}
+
+.agent-select-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Custom scrollbar for agent-select-list */
+.agent-select-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.agent-select-list::-webkit-scrollbar-track {
+    background: rgba(10, 15, 25, 0.5);
+    border-radius: 4px;
+}
+
+.agent-select-list::-webkit-scrollbar-thumb {
+    background: rgba(0, 212, 255, 0.3);
+    border-radius: 4px;
+}
+
+.agent-select-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 212, 255, 0.5);
+}
+
+.agent-select-loading,
+.agent-select-error,
+.agent-select-empty {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.agent-select-error {
+    color: #f44336;
+}
+
+.agent-select-level-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.agent-select-level-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #00d4ff;
+    padding: 8px 12px;
+    background: rgba(0, 212, 255, 0.1);
+    border-radius: 6px;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.agent-select-level-agents {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-left: 12px;
+}
+
+.agent-select-item {
+    padding: 12px 16px;
+    background: rgba(20, 30, 50, 0.6);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.agent-select-item:hover {
+    background: rgba(0, 212, 255, 0.1);
+    border-color: rgba(0, 212, 255, 0.3);
+    transform: translateX(4px);
+}
+
+.agent-select-item.selected {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: rgba(0, 212, 255, 0.4);
+    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
+}
+
+.agent-select-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.agent-select-item-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e6ed;
+    flex: 1;
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.agent-select-item-level {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(0, 212, 255, 0.2);
+    color: #00d4ff;
+}
+
+.agent-select-item-description {
+    font-size: 12px;
+    color: #9ca3af;
+    line-height: 1.4;
+    margin-top: 4px;
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+}
+
+/* Agent Tree Panel (inside modal) */
+.agent-tree-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.agent-tree-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0 16px 0;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+    flex-shrink: 0;
+    margin-bottom: 16px;
+}
+
+.agent-tree-panel-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #ffffff;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agent-tree-panel-header h3 i {
+    color: #00d4ff;
+}
+
+.agent-tree-panel-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    padding: 8px 0;
+}
+
+.agent-tree-panel-content .agent-tree-loading,
+.agent-tree-panel-content .agent-tree-error,
+.agent-tree-panel-content .agent-tree-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.agent-tree-panel-content .agent-tree-error {
+    color: #f44336;
+}
+
+.agent-tree-node.root .agent-tree-node-content {
+    background: rgba(0, 212, 255, 0.15);
+    border-color: rgba(0, 212, 255, 0.4);
+    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
+}
+
+/* Custom scrollbar for agent-tree-panel-content */
+.agent-tree-panel-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.agent-tree-panel-content::-webkit-scrollbar-track {
+    background: rgba(10, 15, 25, 0.5);
+    border-radius: 4px;
+}
+
+.agent-tree-panel-content::-webkit-scrollbar-thumb {
+    background: rgba(0, 212, 255, 0.3);
+    border-radius: 4px;
+}
+
+.agent-tree-panel-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 212, 255, 0.5);
+}
+
