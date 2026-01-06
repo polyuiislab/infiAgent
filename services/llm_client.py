@@ -292,14 +292,14 @@ class SimpleLLMClient:
             if max_tokens > 0:
                 kwargs["max_tokens"] = max_tokens
             
-            # 添加工具定义
+            # 添加工具定义（只有当工具列表非空时才添加工具相关参数）
             if tools_definition:
                 kwargs["tools"] = tools_definition
                 if tool_choice == "required":
                     kwargs["tool_choice"] = "required"
                 kwargs["parallel_tool_calls"] = False
-            elif tool_choice == "none":
-                kwargs["tool_choice"] = "none"
+            # 注意：当 tools_definition 为空时，不添加任何工具相关参数
+            # 这避免了 API 错误：When using `tool_choice`, `tools` must be set
             
             # 添加模型特定的额外参数
             model_extra_params = self.model_configs.get(model, {})
