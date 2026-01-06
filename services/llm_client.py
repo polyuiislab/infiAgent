@@ -359,19 +359,19 @@ class SimpleLLMClient:
                             response_model = first_chunk.model
                         
                         # 打印首包
-                        try:
-                            safe_print(f"\n[chunk #1] {first_chunk}", flush=True)
-                        except Exception:
-                            pass
+                        # try:
+                        #     safe_print(f"\n[chunk #1] {first_chunk}", flush=True)
+                        # except Exception:
+                        #     pass
 
                         if first_chunk.choices:
                             delta = first_chunk.choices[0].delta
                             if hasattr(delta, 'content') and delta.content:
                                 accumulated_content += delta.content
-                                try:
-                                    safe_print(delta.content, end="", flush=True)
-                                except Exception:
-                                    pass
+                                # try:
+                                #     safe_print(delta.content, end="", flush=True)
+                                # except Exception:
+                                #     pass
                             
                             if hasattr(delta, 'tool_calls') and delta.tool_calls:
                                 for tc in delta.tool_calls:

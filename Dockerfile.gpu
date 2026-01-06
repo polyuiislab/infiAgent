@@ -1,0 +1,54 @@
+# GPU 支持版本 - 直接使用 python:3.11-slim，运行时挂载 NVIDIA 运行时
+# 注意：需要宿主机安装 NVIDIA Container Toolkit
+FROM python:3.11-slim
+
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制依赖文件
+COPY requirements.txt tool_server_lite/requirements.txt /app/
+
+# 复制整个项目
+COPY . /app/
+
+# 安装 Python 依赖（包括 Web UI）
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir supervisor && \
+    pip install --no-cache-dir flask>=2.0.0 flask-cors>=3.0.0
+
+# 安装 Playwright 及浏览器
+RUN playwright install --with-deps chromium
+
+# 创建必要的目录
+RUN mkdir -p /root/.config/mla /root/mla_v3 /workspace /mla_config
+
+# 复制 supervisor 配置
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# 设置工作目录
+WORKDIR /workspace
+
+# 复制并设置权限
+COPY docker/entrypoint.sh /entrypoint.sh
+COPY docker/init-config.sh /init-config.sh
+RUN chmod +x /entrypoint.sh /init-config.sh
+
+# 暴露端口 (Tool Server: 8002, Config Service: 9641, Web UI: 4242)
+EXPOSE 8002
+EXPOSE 9641
+EXPOSE 4242
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
+
+# 设置入口点
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["cli"]
+
