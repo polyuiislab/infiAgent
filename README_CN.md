@@ -154,7 +154,7 @@ docker run -d --name mla \
 <p align="center">
   <img src="assets/web_ui.png" alt="Paper Generation Demo 2" width="800">
 </p>
-📖 **Web UI 使用与界面说明**：详见 `web_ui/README.md`。
+📖 **Web UI 使用与界面说明**：详见 [web_ui/README.md](web_ui/README.md)。
 ### 方式 B: CLI 模式
 
 ```bash

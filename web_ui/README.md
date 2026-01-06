@@ -116,6 +116,12 @@ flask-cors
 
 ## 使用说明
 
+<p align="center">
+  <video src="web_ui/web_intro.mp4" controls width="800">
+    Your browser does not support the video tag.
+  </video>
+</p>
+
 ### 1. 设置 Task ID
 
 在顶部的 "Task ID" 输入框中输入任务目录的绝对路径，例如：

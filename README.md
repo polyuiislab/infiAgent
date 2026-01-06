@@ -146,7 +146,7 @@ default username：user defaultpassword：password
   <img src="assets/web_ui.png" alt="Paper Generation Demo 2" width="800">
 </p>
 
-📖 **Web UI usage & UI details**: see `web_ui/README.md`.
+📖 **Web UI usage & UI details**: see [web_ui/README.md](web_ui/README.md).
 
 ### Option B: CLI Mode
 
