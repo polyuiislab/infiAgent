@@ -41,6 +41,8 @@ The default configuration in this repository is a **research-oriented semi-speci
 
 If you pulled the image or code before the latest update date, please refer to the issues that have been fixed and, based on your needs, pull the image and code again.
 
+- [2026/01/07] Web UI: This is a temporary fix for the "处理事件异常: 'int' object has no attribute 'get'". It will not affect subsequent agent output or operation, but the error will still be displayed. A full fix is ​​pending.
+
 - [2026/01/06] Web UI: add an entry-agent selector next to Task ID so you can choose the root agent for the conversation, with an agent list and a visual agent tree for the selected root.
 
 - [2026/01/05] Resolves global freeze caused by prolonged unresponsiveness of the primary token. Please update code or pull latest docker image!
