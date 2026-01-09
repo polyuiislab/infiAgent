@@ -713,6 +713,18 @@ def run_task():
                                 "timestamp": datetime.now().isoformat()
                             })
                         continue
+                    except Exception as e:
+                        # 捕获其他所有异常，输出错误但继续读取
+                        import traceback
+                        output_queue.put({
+                            "type": "error",
+                            "agent": agent_name,
+                            "content": f"⚠️ 处理事件异常: {str(e)}",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        # 记录详细错误日志供调试
+                        print(f"⚠️ 处理事件异常，继续读取: {str(e)}\n{traceback.format_exc()}", flush=True)
+                        continue  # 继续处理下一个事件
             
             # Process remaining buffer
             if buffer.strip():
@@ -758,13 +770,42 @@ def run_task():
         except Exception as e:
             import traceback
             error_detail = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"❌ 读取输出循环异常: {error_detail}", flush=True)
+            
+            # 输出错误但不终止 - 等待进程结束
             output_queue.put({
                 "type": "error",
                 "agent": agent_name,
-                "content": f"❌ 读取输出异常: {str(e)}",
+                "content": f"⚠️ 读取输出异常: {str(e)}，等待进程结束...",
                 "timestamp": datetime.now().isoformat()
             })
-            output_queue.put(None)
+            
+            # 等待进程结束
+            try:
+                if process.poll() is None:  # 进程还在运行
+                    print("⏳ 进程仍在运行，等待完成...", flush=True)
+                    process.wait(timeout=300)  # 最多等待5分钟
+                    print(f"✅ 进程已结束，退出码: {process.returncode}", flush=True)
+                
+                # 发送最终状态
+                if process.returncode == 0:
+                    output_queue.put({
+                        "type": "end",
+                        "agent": agent_name,
+                        "content": "✅ 进程完成",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                else:
+                    output_queue.put({
+                        "type": "error",
+                        "agent": agent_name,
+                        "content": f"⚠️ 进程退出码: {process.returncode}",
+                        "timestamp": datetime.now().isoformat()
+                    })
+            except Exception as wait_err:
+                print(f"⚠️ 等待进程失败: {wait_err}", flush=True)
+            finally:
+                output_queue.put(None)  # 发送终止标记
         finally:
             user_execution['running'] = False
     

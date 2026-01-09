@@ -296,12 +296,23 @@ class ContextBuilder:
         return output_text
     
     def _build_structured_call_info(self, current: Dict, current_agent_id: str) -> str:
-        """构建结构化调用信息（JSON格式，更清晰）"""
+        """
+        构建结构化调用信息（JSON格式，更清晰）
+        支持压缩机制：当agent数量超过阈值时，使用LLM压缩
+        注意：每个agent的压缩结果单独缓存（因为is_current标记不同）
+        """
         hierarchy = current.get("hierarchy", {})
         agents_status = current.get("agents_status", {})
         
         if not agents_status:
             return "(无调用关系)"
+        
+        # 检查是否已有该agent的压缩结果（每个agent单独缓存）
+        cache_key = f"_compressed_structured_call_info_{current_agent_id}"
+        compressed_call_info = current.get(cache_key)
+        if compressed_call_info:
+            safe_print(f"使用已有的压缩结构化调用信息 (agent: {current_agent_id})")
+            return compressed_call_info
         
         # 找到根Agent（Level 0）
         root_agents = [
@@ -323,7 +334,82 @@ class ContextBuilder:
                 call_tree.append(tree_node)
         
         # 转换为易读的JSON字符串
-        return json.dumps(call_tree, indent=2, ensure_ascii=False)
+        call_tree_json = json.dumps(call_tree, indent=2, ensure_ascii=False)
+        
+        # 检查是否需要压缩（agent数量超过10个，或JSON长度超过8000字符）
+        agent_count = len(agents_status)
+        if agent_count > 10 or len(call_tree_json) > 8000:  # 测试用：原值 agent_count > 10 or len > 8000
+            safe_print(f"检测到较大的结构化调用信息（{agent_count}个agents，{len(call_tree_json)}字符），启动压缩...")
+            compressed_result = self._compress_structured_call_info_with_llm(
+                call_tree, current_agent_id
+            )
+            
+            # 保存压缩结果（针对当前agent）
+            cache_key = f"_compressed_structured_call_info_{current_agent_id}"
+            context = self.hierarchy_manager.get_context()
+            context["current"][cache_key] = compressed_result
+            self.hierarchy_manager._save_context(context)
+            
+            return compressed_result
+        
+        return call_tree_json
+    
+    def _compress_structured_call_info_with_llm(self, call_tree: List[Dict], current_agent_id: str) -> str:
+        """
+        使用LLM压缩结构化调用信息
+        
+        Args:
+            call_tree: Agent调用树结构
+            current_agent_id: 当前正在运行的Agent ID
+            
+        Returns:
+            压缩后的文本（LLM原始输出）
+        """
+        prompt = f"""请分析以下Agent调用树结构，提取关键信息并总结。
+
+当前正在运行的Agent ID: {current_agent_id}
+
+Agent调用树数据：
+{json.dumps(call_tree, ensure_ascii=False, indent=2)}
+
+请总结以下内容：
+1. **调用关系概览**：描述整体的Agent层级结构和调用关系
+2. **已完成的Agent**：列出已完成的Agent及其关键输出（特别是可能对当前Agent有用的信息）
+3. **运行中的Agent**：列出运行中的Agent及其当前thinking
+4. **当前Agent的上下文**：重点说明当前Agent的父Agent、兄弟Agent状态，以及可用的上下文信息
+
+要求：
+- 保留关键的agent_id、agent_name、level、status信息
+- 对于已完成的Agent，保留重要的final_output（可适当精简）
+- 对于运行中的Agent，保留关键的thinking（可适当精简）
+- 重点突出与当前Agent相关的信息
+- 总字符数控制在2000字以内
+- 优先使用用户的输入习惯语言进行输出
+- 直接输出总结内容文本，不需要任何标记，不要使用markdown格式"""
+
+        from services.llm_client import ChatMessage
+        
+        messages = [ChatMessage(role="user", content=prompt)]
+        
+        response = self.llm_client.chat(
+            history=messages,
+            model=self.llm_client.models[0],
+            system_prompt="你是一个专业的内容总结助手。请简洁明了地总结Agent调用树信息。",
+            tool_list=[],
+            tool_choice="none"
+        )
+        
+        if response.status != "success":
+            # 压缩失败时返回原始JSON（截断版）
+            safe_print(f"⚠️ LLM压缩失败: {response.output}，使用截断版本")
+            original_json = json.dumps(call_tree, indent=2, ensure_ascii=False)
+            return original_json[:5000] + "\n...(已截断)"
+
+        output_text = response.output
+        
+        safe_print(f"✅ 结构化调用信息压缩成功，长度: {len(output_text)} 字符")
+        
+        return output_text
     
     def _build_agent_tree_json(
         self,

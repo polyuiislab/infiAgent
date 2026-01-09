@@ -155,6 +155,10 @@ def clean_before_start(task_id: str, new_user_input: str = None):
             # 删除压缩的历史（如果有）
             if "_compressed_user_agent_history" in context["current"]:
                 del context["current"]["_compressed_user_agent_history"]
+            # 删除所有agent的结构化调用信息压缩缓存
+            keys_to_delete = [k for k in context["current"].keys() if k.startswith("_compressed_structured_call_info_")]
+            for key in keys_to_delete:
+                del context["current"][key]
             safe_print(f"   🗑️ 清空 current，准备新任务")
         else:
             # 续跑：保留 running agents

@@ -386,11 +386,11 @@ class SimpleLLMClient:
                                     if tc.function and tc.function.arguments:
                                         accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
                                     
-                                    try:
-                                        tc_args_preview = tc.function.arguments[:200] if tc.function and tc.function.arguments else ""
-                                        safe_print(f"\n[tool_call #{idx}] {tc.function.name}: {tc_args_preview}", flush=True)
-                                    except Exception:
-                                        pass
+                                    # try:
+                                    #     tc_args_preview = tc.function.arguments[:200] if tc.function and tc.function.arguments else ""
+                                    #     safe_print(f"\n[tool_call #{idx}] {tc.function.name}: {tc_args_preview}", flush=True)
+                                    # except Exception:
+                                    #     pass
                                         
                             if first_chunk.choices[0].finish_reason:
                                 finish_reason = first_chunk.choices[0].finish_reason
@@ -452,11 +452,11 @@ class SimpleLLMClient:
                             accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
                         
                         # 工具调用流式打印：名称与参数增量，便于无 CLI 时跟踪
-                        try:
-                            tc_args_preview = tc.function.arguments[:200] if tc.function and tc.function.arguments else ""
-                            safe_print(f"\n[tool_call #{idx}] {tc.function.name}: {tc_args_preview}", flush=True)
-                        except Exception:
-                            pass
+                        # try:
+                        #     tc_args_preview = tc.function.arguments[:200] if tc.function and tc.function.arguments else ""
+                        #     safe_print(f"\n[tool_call #{idx}] {tc.function.name}: {tc_args_preview}", flush=True)
+                        # except Exception:
+                        #     pass
                 
                 # C. 记录结束原因
                 if chunk.choices[0].finish_reason:
