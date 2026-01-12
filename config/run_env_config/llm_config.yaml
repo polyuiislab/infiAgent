@@ -5,8 +5,8 @@ base_url: https://openrouter.ai/api/v1
 api_key: 
 # 超时配置（秒）
 timeout: 600              # LiteLLM 原生：建立连接及整体响应的最大等待时间 
-stream_timeout: 20        # LiteLLM 原生：两个流式数据块之间的最大间隔时间
-first_chunk_timeout: 20   # 应用层强制：连接建立+首包接收的最大时间（防止连接池死锁）
+stream_timeout: 300        # LiteLLM 原生：两个流式数据块之间的最大间隔时间
+first_chunk_timeout: 300   # 应用层强制：连接建立+首包接收的最大时间（防止连接池死锁）
 models:
 - openai/google/gemini-3-flash-preview
 figure_models:
