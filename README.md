@@ -37,9 +37,11 @@ The default configuration in this repository is a **research-oriented semi-speci
 - 🧪 **Scientific Computing**: ECM protein simulation, logistics scheduling, assignment grading, etc.
 - 🔬 **Full Research Pipeline**: Literature collection, experiments, figures, and paper drafting
 
-### Update
+### Update & News🔥
 
 If you pulled the image or code before the latest update date, please refer to the issues that have been fixed and, based on your needs, pull the image and code again.
+
+- [2026/01/08] Our Paper "[InfiAgent: An Infinite-Horizon Framework for General-Purpose Autonomous Agents](https://arxiv.org/abs/2601.03204)" released
 
 - [2026/01/07] Web UI: This is a temporary fix for the "处理事件异常: 'int' object has no attribute 'get'". It will not affect subsequent agent output or operation, but the error will still be displayed. A full fix is ​​pending.
 

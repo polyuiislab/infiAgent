@@ -39,9 +39,11 @@
 - 🧪 **科学计算**：ECM 蛋白质配比仿真、物流排班、作业批改等
 - 🔬 **完整研究流程**：文献收集、实验设计、图表生成和论文撰写
 
-### 动态
+### 更新 & 新闻🔥
 
 如果你在最新更新日期前拉取镜像或者代码，请参考修复的问题，重新拉取镜像和代码。
+
+- [2026/01/08] 我们的论文 "[InfiAgent: An Infinite-Horizon Framework for General-Purpose Autonomous Agents](https://arxiv.org/abs/2601.03204)" 发布
 
 - [2026/01/07] Web UI: 临时修复“处理事件异常: 'int' object has no attribute 'get'”。不会影响后续 agent输出和工作，但仍然会显示报错，等待后续完全修复。
 
