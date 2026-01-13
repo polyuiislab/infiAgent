@@ -123,22 +123,66 @@ class AgentExecutor:
             if self.pending_tools:
                 safe_print(f"🔄 发现{len(self.pending_tools)}个pending工具，恢复执行...")
                 self._recover_pending_tools(task_id)
-        
+        try:
         # 首次thinking（初始规划）
-        if start_turn == 0 and not self.first_thinking_done:
-            safe_print(f"[{self.agent_name}] 开始行动前进行初始规划...")
-            thinking_result = self._trigger_thinking(task_id, user_input, is_first=True)
-            if thinking_result:
-                self.latest_thinking = thinking_result
-                self.first_thinking_done = True
-                self.hierarchy_manager.update_thinking(self.agent_id, thinking_result)
-                self._save_state(task_id, user_input, 0)
-                safe_print(f"[{self.agent_name}] 初始规划完成")
+            if start_turn == 0 and not self.first_thinking_done:
+                safe_print(f"[{self.agent_name}] 开始行动前进行初始规划...")
+                thinking_result = self._trigger_thinking(task_id, user_input, is_first=True)
+                if thinking_result:
+                    self.latest_thinking = thinking_result
+                    self.first_thinking_done = True
+                    self.hierarchy_manager.update_thinking(self.agent_id, thinking_result)
+                    self._save_state(task_id, user_input, 0)
+                    safe_print(f"[{self.agent_name}] 初始规划完成")
+                    
+                    # 发送 thinking 事件（完整内容）
+                    emitter = get_event_emitter()
+                    if emitter.enabled:
+                        emitter.token(f"[{self.agent_name}] 初始规划: {thinking_result}")
+        except Exception as e:
+                import traceback
+                import sys
                 
-                # 发送 thinking 事件（完整内容）
+                # 获取详细错误信息
+                error_type = type(e).__name__
+                error_msg = str(e)
+                error_traceback = traceback.format_exc()
+                
+                # 构建友好的错误提示消息
+                error_display = f"""
+❌ 执行过程中发生错误，任务已中断
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 错误类型: {error_type}
+📝 错误信息: {error_msg}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 详细堆栈:
+{error_traceback}
+"""
+                
+                # 添加当前进度信息
+                if self.latest_thinking:
+                    error_display += f"\n💭 当前进度:\n{self.latest_thinking[:500]}\n"
+                
+                error_display += """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 任务已保存在当前状态，请:
+   1. 根据错误信息排查问题（修复网络、配置等）
+   2. 重新启动 CLI 并输入 /resume 命令恢复任务
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+                
+                # 通过 event_emitter 发送错误（CLI 会显示）
                 emitter = get_event_emitter()
                 if emitter.enabled:
-                    emitter.token(f"[{self.agent_name}] 初始规划: {thinking_result}")
+                    emitter.error(error_display)
+                else:
+                    # 非 JSONL 模式，直接打印
+                    safe_print(error_display)
+                
+                # 不调用 pop_agent，保持 stack 不变（允许 resume）
+                # 直接退出程序
+                sys.exit(1)
         
         # 强制工具调用计数器
         max_tool_try = 0
@@ -323,17 +367,49 @@ class AgentExecutor:
                         self.action_history=[]
             
             except Exception as e:
-                safe_print(f"❌ 执行出错: {e}")
                 import traceback
-                traceback.print_exc()
-                safe_print(f"错误信息: {traceback.format_exc()}")
+                import sys
                 
-                error_result = {
-                    "status": "error",
-                    "output": f"执行过程中出错\n\n目前进度:\n{self.latest_thinking}" if self.latest_thinking else "执行过程中出错"
-                }
-                self.hierarchy_manager.pop_agent(self.agent_id, str(error_result))
-                return error_result
+                # 获取详细错误信息
+                error_type = type(e).__name__
+                error_msg = str(e)
+                error_traceback = traceback.format_exc()
+                
+                # 构建友好的错误提示消息
+                error_display = f"""
+❌ 执行过程中发生错误，任务已中断
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 错误类型: {error_type}
+📝 错误信息: {error_msg}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 详细堆栈:
+{error_traceback}
+"""
+                
+                # 添加当前进度信息
+                if self.latest_thinking:
+                    error_display += f"\n💭 当前进度:\n{self.latest_thinking[:500]}\n"
+                
+                error_display += """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 任务已保存在当前状态，请:
+   1. 根据错误信息排查问题（修复网络、配置等）
+   2. 重新启动 CLI 并输入 /resume 命令恢复任务
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+                
+                # 通过 event_emitter 发送错误（CLI 会显示）
+                emitter = get_event_emitter()
+                if emitter.enabled:
+                    emitter.error(error_display)
+                else:
+                    # 非 JSONL 模式，直接打印
+                    safe_print(error_display)
+                
+                # 不调用 pop_agent，保持 stack 不变（允许 resume）
+                # 直接退出程序
+                sys.exit(1)
         
         # 超过最大轮次
         safe_print(f"\n⚠️ 达到最大轮次限制: {self.max_turns}")
@@ -428,10 +504,11 @@ class AgentExecutor:
                 #     tool_call_counter=self.tool_call_counter
                 # )
         except Exception as e:
-            safe_print(f"⚠️ Thinking触发失败: {e}")
-            import traceback
-            traceback.print_exc()
-            return ""
+            raise Exception(str(e))
+            # safe_print(f"⚠️ Thinking触发失败: {e}")
+            # import traceback
+            # traceback.print_exc()
+            # return ""
     
     def _compress_action_history_if_needed(self):
         """检查并压缩历史动作（如果超过上下文窗口限制）"""

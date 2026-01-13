@@ -234,20 +234,7 @@ def main():
             print("\n🧹 检查并清理状态...")
         
         # 如果指定 --force-new，清空所有状态
-        if args.force_new:
-            if not args.jsonl:
-                print("🗑️  --force-new: 清空所有状态，开始新任务")
-            context = hierarchy_manager._load_context()
-            context["current"] = {
-                "instructions": [],
-                "hierarchy": {},
-                "agents_status": {}
-            }
-            hierarchy_manager._save_context(context)
-            hierarchy_manager._save_stack([])
-        else:
-            from core.state_cleaner import clean_before_start
-            clean_before_start(args.task_id, args.user_input)
+        
         
         # 注册用户指令
         if not args.jsonl:
@@ -280,12 +267,29 @@ def main():
             print("▶️  开始执行任务")
             print(f"{'='*100}\n")
         
+        
+        
         agent = AgentExecutor(
             agent_name=args.agent_name,
             agent_config=agent_config,
             config_loader=config_loader,
             hierarchy_manager=hierarchy_manager
         )
+
+        if args.force_new:
+            if not args.jsonl:
+                print("🗑️  --force-new: 清空所有状态，开始新任务")
+            context = hierarchy_manager._load_context()
+            context["current"] = {
+                "instructions": [],
+                "hierarchy": {},
+                "agents_status": {}
+            }
+            hierarchy_manager._save_context(context)
+            hierarchy_manager._save_stack([])
+        else:
+            from core.state_cleaner import clean_before_start
+            clean_before_start(args.task_id, args.user_input)
         
         # 设置工具执行权限模式
         if args.auto_mode is not None:

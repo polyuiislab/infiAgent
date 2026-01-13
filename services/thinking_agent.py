@@ -140,8 +140,10 @@ agent可以调用的所有工具和参数信息
                 return f"[初始规划失败: {response.error_information}]"
         
         except Exception as e:
-            safe_print(f"⚠️ 首次thinking失败: {e}")
-            return f"[初始规划失败: {str(e)}]"
+            safe_print(f"⚠️ thinking失败: {e}")
+            raise Exception(str(e))
+            
+            
     
     def _format_tools_info(self, available_tools: List[str], tools_config: dict = None) -> str:
         """

@@ -662,6 +662,12 @@ class InteractiveCLI:
                             self.output_lines.append(display_line)
                             print(display_line)
                             print()
+                        
+                        elif event['type'] == 'error':
+                            # 错误事件 - 完整显示错误信息
+                            error_text = event.get('text', '')
+                            print(error_text)
+                            self.output_lines.append(f"❌ 发生错误")
                     
                     except json.JSONDecodeError:
                         # 不是有效的 JSON，跳过

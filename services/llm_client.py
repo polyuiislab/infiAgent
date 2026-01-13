@@ -242,9 +242,10 @@ class SimpleLLMClient:
             if retry_count < max_retries:
                 continue  # 继续重试
             else:
-                # 达到最大重试次数，返回最后的错误
+                # 达到最大重试次数，抛出异常（让上层捕获并触发错误处理）
                 safe_print(f"   ❌ 已达到最大重试次数 ({max_retries + 1})")
-                return response
+                error_msg = f"LLM 调用失败（已重试 {max_retries + 1} 次）: {response.error_information}"
+                raise Exception(error_msg)
                 # return response
         
         # 所有重试都失败了
