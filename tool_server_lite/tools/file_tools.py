@@ -318,12 +318,12 @@ class FileWriteTool(BaseTool):
             end_line = parameters.get("end_line")
             
             # 禁止写入 reference.bib 文件
-            if path and path.endswith("reference.bib"):
-                return {
-                    "status": "error",
-                    "output": "",
-                    "error": "禁止使用 file_write 工具写入 reference.bib 文件。请使用专门的参考文献管理工具：reference_add（添加）、reference_delete（删除）。"
-                }
+            # if path and path.endswith("reference.bib"):
+            #     return {
+            #         "status": "error",
+            #         "output": "",
+            #         "error": "禁止使用 file_write 工具写入 reference.bib 文件。请使用专门的参考文献管理工具：reference_add（添加）、reference_delete（删除）。"
+            #     }
             
             abs_path = get_abs_path(task_id, path)
             

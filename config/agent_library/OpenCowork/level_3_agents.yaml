@@ -1,0 +1,45 @@
+tools:
+  alpha_agent:
+    level: 3
+    type: llm_call_agent
+    available_tools:
+      - execute_command
+      - human_in_loop
+      - judge_agent
+      - file_read
+      - file_write
+      - file_move
+      - dir_list
+      - dir_create
+      - final_output
+      - vision_tool
+      - answer_from_papers
+      - browser_agent
+      - data_collection_agent
+      - data_analysis_agent
+      - coder_agent
+      - material_to_document_agent
+      - create_image
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是一个通用的 AI 助手, 是 cowork的主要智能体。
+      agent_workflow: |
+        详细分析用户的意图(如果不清晰，请通过提供选项的方式和用户交互明确需求），并根据意图编排使用你的工具完成任务。大部分任务可以由你亲自完成。
+        除非任务明确落入其他智能体范畴，则将任务外包。
+    name: "alpha_agent"
+    description: "你的职责是一个通用的 AI 助手, 是 cowork的主要智能体"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "用户写作需求的初始指令"
+      required: ["task_id", "task_input"]
+
+         
+

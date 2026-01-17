@@ -102,7 +102,7 @@ class VisionTool(BaseTool):
 
 
 class CreateImageTool(BaseTool):
-    """图片生成工具 - 根据提示词生成图片"""
+    """图片生成工具 - 根据提示词生成图片（支持参考图）"""
     
     def execute(self, task_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -111,13 +111,19 @@ class CreateImageTool(BaseTool):
         Parameters:
             prompt (str): 图片提示词
             image_path (str): 生成图片保存的相对路径（相对于任务目录）
+            reference_images (list[str], optional): 参考图片相对路径列表（用于图片编辑/风格迁移）
             model (str, optional): 模型名称
+            size (str, optional): 图片尺寸，默认 "1024x1024"
+            n (int, optional): 生成图片数量，默认 1
         """
         try:
             # 获取参数
             prompt = parameters.get("prompt")
             image_path = parameters.get("image_path")
+            reference_images = parameters.get("reference_images")
             model = parameters.get("model")
+            size = parameters.get("size", "1024x1024")
+            n = parameters.get("n", 1)
             
             if not prompt or not image_path:
                 return {
@@ -129,6 +135,13 @@ class CreateImageTool(BaseTool):
             # 转换为绝对路径
             abs_save_path = get_abs_path(task_id, image_path)
             
+            # 处理参考图片路径
+            abs_reference_images = None
+            if reference_images:
+                if isinstance(reference_images, str):
+                    reference_images = [reference_images]
+                abs_reference_images = [str(get_abs_path(task_id, ref_path)) for ref_path in reference_images]
+            
             # 确保父目录存在
             abs_save_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -139,38 +152,59 @@ class CreateImageTool(BaseTool):
                 # 生成图片
                 result_data = llm_client.create_image(
                     prompt=prompt,
-                    model=model
+                    model=model,
+                    reference_images=abs_reference_images,
+                    size=size,
+                    n=n
                 )
                 
                 import requests
                 import base64
                 
                 # 处理返回结果（URL 或 Base64）
-                if result_data.startswith('http'):
-                    # 下载图片
-                    response = requests.get(result_data, timeout=30)
-                    if response.status_code == 200:
-                        with open(abs_save_path, 'wb') as f:
-                            f.write(response.content)
+                results_to_save = [result_data] if isinstance(result_data, str) else result_data
+                
+                for idx, result in enumerate(results_to_save):
+                    # 确定保存路径
+                    if idx == 0:
+                        save_path = abs_save_path
                     else:
-                        return {
-                            "status": "error",
-                            "output": "",
-                            "error": f"下载生成的图片失败: HTTP {response.status_code}"
-                        }
-                else:
-                    # Base64 数据
-                    # 有可能带 data:image/png;base64, 前缀，需要处理
-                    if "," in result_data:
-                        result_data = result_data.split(",")[1]
+                        # 多个结果时，添加序号
+                        stem = abs_save_path.stem
+                        suffix = abs_save_path.suffix
+                        save_path = abs_save_path.parent / f"{stem}_{idx}{suffix}"
                     
-                    image_content = base64.b64decode(result_data)
-                    with open(abs_save_path, 'wb') as f:
-                        f.write(image_content)
+                    if result.startswith('http'):
+                        # 下载图片
+                        response = requests.get(result, timeout=30)
+                        if response.status_code == 200:
+                            with open(save_path, 'wb') as f:
+                                f.write(response.content)
+                        else:
+                            return {
+                                "status": "error",
+                                "output": "",
+                                "error": f"下载生成的图片失败: HTTP {response.status_code}"
+                            }
+                    else:
+                        # Base64 数据
+                        # 有可能带 data:image/png;base64, 前缀，需要处理
+                        if "," in result:
+                            result = result.split(",")[1]
+                        
+                        image_content = base64.b64decode(result)
+                        with open(save_path, 'wb') as f:
+                            f.write(image_content)
+                
+                # 构建输出消息
+                if len(results_to_save) == 1:
+                    output_msg = f"图片已生成并保存至: {image_path}"
+                else:
+                    output_msg = f"已生成 {len(results_to_save)} 张图片，保存至: {image_path} 及其变体"
                 
                 return {
                     "status": "success",
-                    "output": f"图片已生成并保存至: {image_path}",
+                    "output": output_msg,
                     "error": ""
                 }
                 
@@ -187,4 +221,3 @@ class CreateImageTool(BaseTool):
                 "output": "",
                 "error": f"执行失败: {str(e)}"
             }
-

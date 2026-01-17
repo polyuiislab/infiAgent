@@ -41,6 +41,19 @@ The default configuration in this repository is a **research-oriented semi-speci
 
 If you pulled the image or code before the latest update date, please refer to the issues that have been fixed and, based on your needs, pull the image and code again.
 
+- [2026/01/17] We introduce a new configuration profile, Open Cowork, which delivers a computer-work assistant similar to Anthropic's Cowork. After entering a user-specified working directory, the assistant can perform a wide range of tasks, including but not limited to: organizing folders, creating PowerPoint presentations, processing and categorizing bills and invoices in multiple formats, conducting in-depth research, and writing project code. The system is built on the InfiAgent architecture, preserving its long-horizon execution capabilities and unbounded, file-system–level memory within the same workspace. Currently, Open Cowork supports CLI and Docker-based CLI modes only. A demonstration video is available for more details.
+
+**Open Cowork Demo Videos:**
+
+
+  [![Desktop Organization & File Management](https://img.youtube.com/vi/_n3DJ5FnjHw/hqdefault.jpg)](https://www.youtube.com/watch?v=_n3DJ5FnjHw)
+
+
+  [![PowerPoint Creation](https://img.youtube.com/vi/uuxAvCLIX9M/hqdefault.jpg)](https://www.youtube.com/watch?v=uuxAvCLIX9M)
+
+
+
+
 - [2026/01/13] Supports breakpoint recovery for program errors (the original Ctrl+C resume function is retained). Please access the resume function using your CLI version and type /resume.
 
 - [2026/01/08] Our Paper "[InfiAgent: An Infinite-Horizon Framework for General-Purpose Autonomous Agents](https://arxiv.org/abs/2601.03204)" released

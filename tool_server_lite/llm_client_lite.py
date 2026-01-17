@@ -196,21 +196,30 @@ class LLMClientLite:
     def create_image(
         self,
         prompt: str,
-        model: Optional[str] = None
-    ) -> str:
+        model: Optional[str] = None,
+        reference_images: Optional[list[str]] = None,
+        size: str = "1024x1024",
+        n: int = 1,
+        response_format: str = "b64_json"
+    ) -> str | list[str]:
         """
-        调用模型生成图片
+        调用模型生成图片（支持参考图）
         
         Args:
             prompt: 提示词
             model: 模型名称，默认使用 figure_models 中的第一个
+            reference_images: 参考图片路径列表（可选），用于图片编辑/风格迁移
+            size: 图片尺寸，默认 "1024x1024"
+            n: 生成图片数量，默认 1
+            response_format: 返回格式 "b64_json" 或 "url"，默认 "b64_json"
             
         Returns:
-            图片的 base64 数据 URL（格式：data:image/png;base64,...）或 HTTP URL
+            单图时返回一个 base64 数据 URL 或 HTTP URL
+            多图时返回 URL 列表
             
         Note:
-            - OpenRouter: 使用 chat.completions + modalities
-            - 其他 API: 使用 litellm.image_generation()
+            - OpenRouter: 使用 chat.completions + modalities (+ 参考图)
+            - 其他 API: 使用 litellm.image_generation() (纯生成) 或 litellm.image_edit() (有参考图)
         """
         if model is None:
             if self.figure_models:
@@ -221,7 +230,10 @@ class LLMClientLite:
                 model = "dall-e-3"
         
         try:
+            has_reference = reference_images and len(reference_images) > 0
             print(f"[INFO] 调用图片生成 API: {model}")
+            if has_reference:
+                print(f"[INFO] 参考图片数量: {len(reference_images)}")
             if self.base_url:
                 print(f"[INFO] 使用自定义端点: {self.base_url}")
             
@@ -229,78 +241,194 @@ class LLMClientLite:
             is_openrouter = self.base_url and 'openrouter' in self.base_url.lower()
             
             if is_openrouter:
-                # OpenRouter 特殊处理：使用 chat.completions + modalities
+                # OpenRouter：使用 chat.completions + modalities
                 from openai import OpenAI
                 
-                print(f"[INFO] 使用 OpenRouter 图片生成方式")
+                print(f"[INFO] 使用 OpenRouter 方式")
                 
                 client = OpenAI(
                     base_url=self.base_url,
                     api_key=self.api_key,
                 )
                 
-                # 使用 chat.completions API
+                # 构建 content
+                if has_reference:
+                    # 有参考图：构建多模态 content
+                    content = [{"type": "text", "text": prompt}]
+                    
+                    for img_path_str in reference_images:
+                        img_path = Path(img_path_str)
+                        if not img_path.exists():
+                            raise FileNotFoundError(f"参考图片不存在: {img_path_str}")
+                        
+                        # 读取并编码图片
+                        with open(img_path, "rb") as image_file:
+                            image_data = base64.b64encode(image_file.read()).decode('utf-8')
+                        
+                        # 判断图片格式
+                        suffix = img_path.suffix.lower()
+                        mime_type_map = {
+                            '.jpg': 'image/jpeg',
+                            '.jpeg': 'image/jpeg',
+                            '.png': 'image/png',
+                            '.gif': 'image/gif',
+                            '.webp': 'image/webp'
+                        }
+                        mime_type = mime_type_map.get(suffix, 'image/jpeg')
+                        
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_data}"
+                            }
+                        })
+                else:
+                    # 纯文本生成
+                    content = prompt
+                
+                # 构建 extra_body
+                extra_body = {"modalities": ["image", "text"]}
+                
+                # 添加 image_config（宽高比）
+                if size and "x" in size:
+                    width, height = map(int, size.split("x"))
+                    from math import gcd
+                    g = gcd(width, height)
+                    ratio_w, ratio_h = width // g, height // g
+                    aspect_ratio = f"{ratio_w}:{ratio_h}"
+                    if aspect_ratio in ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]:
+                        extra_body["image_config"] = {"aspect_ratio": aspect_ratio}
+                
+                # 调用 API
                 response = client.chat.completions.create(
                     model=model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    extra_body={"modalities": ["image", "text"]}
+                    messages=[{"role": "user", "content": content}],
+                    extra_body=extra_body
                 )
                 
                 # 提取图片
                 message = response.choices[0].message
+                results = []
+                
                 if hasattr(message, 'images') and message.images:
                     for image in message.images:
                         if isinstance(image, dict):
                             image_url = image.get('image_url', {}).get('url')
                             if image_url:
-                                print(f"[INFO] 成功生成图片: {image_url[:50]}...")
-                                return image_url
-                    raise Exception("images 列表中未找到有效的图片 URL")
+                                results.append(image_url)
+                        elif hasattr(image, 'image_url'):
+                            url = getattr(image.image_url, 'url', None)
+                            if url:
+                                results.append(url)
+                    
+                    if results:
+                        print(f"[INFO] 成功生成 {len(results)} 张图片")
+                        return results[0] if n == 1 else results
+                    else:
+                        raise Exception("响应中未找到有效的图片")
                 else:
                     raise Exception(f"响应中没有 images 字段。Message 属性: {dir(message)}")
             
             else:
-                # 其他 API：使用标准的 image_generation
-                from litellm import image_generation
+                # 其他供应商（Gemini等）：统一使用 litellm.completion()
+                from litellm import completion
                 
-                print(f"[INFO] 使用标准 image_generation() 方式")
+                print(f"[INFO] 使用 litellm.completion() 方式")
                 
-                # 构建参数
+                # 构建 content
+                if has_reference:
+                    # 有参考图：构建多模态 content
+                    content = [{"type": "text", "text": prompt}]
+                    
+                    for img_path_str in reference_images:
+                        img_path = Path(img_path_str)
+                        
+                        # 读取并编码图片
+                        with open(img_path, "rb") as image_file:
+                            image_data = base64.b64encode(image_file.read()).decode('utf-8')
+                        
+                        # 判断图片格式
+                        suffix = img_path.suffix.lower()
+                        mime_type_map = {
+                            '.jpg': 'image/jpeg',
+                            '.jpeg': 'image/jpeg',
+                            '.png': 'image/png',
+                            '.gif': 'image/gif',
+                            '.webp': 'image/webp'
+                        }
+                        mime_type = mime_type_map.get(suffix, 'image/jpeg')
+                        
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_data}"
+                            }
+                        })
+                else:
+                    # 纯文本生成
+                    content = prompt
+                
+                # 构建请求参数
                 kwargs = {
                     "model": model,
-                    "prompt": prompt,
+                    "messages": [{"role": "user", "content": content}],
                     "api_key": self.api_key,
+                    "timeout": 300,
+                    "modalities": ["image", "text"]
                 }
                 
-                # 只有在有自定义 base_url 时才添加 api_base 参数
+                # 添加 base_url（如果有）
                 if self.base_url and self.base_url.strip():
                     kwargs["api_base"] = self.base_url
                 
-                # 调用 litellm.image_generation
-                response = image_generation(**kwargs)
+                # 添加 image_config（宽高比配置）
+                if size and "x" in size:
+                    width, height = map(int, size.split("x"))
+                    from math import gcd
+                    g = gcd(width, height)
+                    ratio_w, ratio_h = width // g, height // g
+                    aspect_ratio = f"{ratio_w}:{ratio_h}"
+                    if aspect_ratio in ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]:
+                        kwargs["image_config"] = {"aspect_ratio": aspect_ratio}
                 
-                # 解析响应
-                if response.data and len(response.data) > 0:
-                    first_image = response.data[0]
+                # 调用 litellm.completion
+                response = completion(**kwargs)
+                
+                # 提取图片
+                results = []
+                if hasattr(response, 'choices') and response.choices:
+                    message = response.choices[0].message
                     
-                    # 优先返回 URL
-                    if hasattr(first_image, 'url') and first_image.url:
-                        print(f"[INFO] 成功生成图片: {first_image.url[:100]}...")
-                        return first_image.url
-                    # 其次返回 base64
-                    elif hasattr(first_image, 'b64_json') and first_image.b64_json:
-                        data_url = f"data:image/png;base64,{first_image.b64_json}"
-                        print(f"[INFO] 成功生成图片（base64），长度: {len(data_url)}")
-                        return data_url
-                    else:
-                        raise Exception(f"图片响应格式异常: {first_image}")
+                    # 方式1：images 字段
+                    if hasattr(message, 'images') and message.images:
+                        for image in message.images:
+                            if isinstance(image, dict):
+                                image_url = image.get('image_url', {}).get('url')
+                                if image_url:
+                                    results.append(image_url)
+                            elif hasattr(image, 'image_url'):
+                                url = getattr(image.image_url, 'url', None)
+                                if url:
+                                    results.append(url)
+                    
+                    # 方式2：content 中的 image_url
+                    if not results and hasattr(message, 'content'):
+                        if isinstance(message.content, list):
+                            for part in message.content:
+                                if isinstance(part, dict) and part.get('type') == 'image_url':
+                                    url = part.get('image_url', {}).get('url')
+                                    if url:
+                                        results.append(url)
+                
+                if results:
+                    print(f"[INFO] 成功生成 {len(results)} 张图片")
+                    return results[0] if n == 1 else results
                 else:
-                    raise Exception("模型未返回图片数据")
+                    if hasattr(response, 'choices') and response.choices:
+                        message = response.choices[0].message
+                        raise Exception(f"响应中未找到图片。Message 内容: {message.content[:200] if hasattr(message, 'content') else 'N/A'}")
+                    else:
+                        raise Exception("响应格式异常")
                 
         except Exception as e:
             raise Exception(f"生成图片失败: {str(e)}")
@@ -538,19 +666,78 @@ def reload_llm_client() -> LLMClientLite:
 
 
 if __name__ == "__main__":
-    # 测试LLM客户端
+    # 测试LLM客户端 - 图片编辑功能
     try:
         client = get_llm_client()
         print(f"✅ LLM客户端初始化成功")
         print(f"   可用模型: {client.models}")
+        print(f"   图片生成模型: {client.figure_models}")
         print(f"   Base URL: {client.base_url}")
+        print("\n" + "="*60)
         
-        # 测试Vision调用（需要提供真实的图片路径）
-        # result = client.vision_query("/path/to/image.jpg", "这是什么？")
-        # print(f"✅ Vision响应: {result}")
+        # 测试图片生成（带参考图）：融合两张图
+        print("\n🎨 测试图片生成功能（带参考图）：融合两张图表...")
+        
+        image1_path = "/Users/chenglin/Desktop/research/agent_framwork/vscode_version/web-use/test_image/7.1.png"
+        image2_path = "/Users/chenglin/Desktop/research/agent_framwork/vscode_version/web-use/test_image/7.2.png"
+        
+        prompt = """
+        请将这两张数据可视化图表融合成一张综合图表。
+        
+        要求：
+        1. 保留两张图的核心信息和数据点
+        2. 使用统一的配色方案
+        3. 合理布局，上下或左右排列
+        4. 添加清晰的标题说明这是算法性能对比分析
+        5. 确保图例和坐标轴标签清晰可读
+        """
+        
+        output_path = "/Users/chenglin/Desktop/research/agent_framwork/vscode_version/web-use/test_image/7_merged.png"
+        
+        print(f"📷 参考图片1: {image1_path}")
+        print(f"📷 参考图片2: {image2_path}")
+        print(f"💾 输出路径: {output_path}")
+        print(f"📝 提示词: {prompt.strip()[:100]}...")
+        
+        result = client.create_image(
+            prompt=prompt,
+            reference_images=[image1_path, image2_path],
+            size="1792x1024",  # 16:9 比例，适合宽屏展示
+            n=1,
+            response_format="b64_json"
+        )
+        
+        # 保存结果
+        import base64
+        if isinstance(result, str):
+            # 单个结果
+            if result.startswith("data:"):
+                # base64 格式
+                image_data = result.split(",")[1]
+            else:
+                image_data = result
+            
+            image_bytes = base64.b64decode(image_data)
+            with open(output_path, 'wb') as f:
+                f.write(image_bytes)
+            
+            print(f"\n✅ 图片编辑成功！")
+            print(f"   保存位置: {output_path}")
+            print(f"   文件大小: {len(image_bytes) / 1024:.2f} KB")
+        else:
+            # 多个结果
+            print(f"\n✅ 生成了 {len(result)} 张图片")
+            for idx, img_data in enumerate(result):
+                save_path = output_path.replace(".png", f"_{idx}.png")
+                if img_data.startswith("data:"):
+                    img_data = img_data.split(",")[1]
+                image_bytes = base64.b64decode(img_data)
+                with open(save_path, 'wb') as f:
+                    f.write(image_bytes)
+                print(f"   图片 {idx+1}: {save_path}")
         
     except Exception as e:
-        print(f"❌ 测试失败: {e}")
+        print(f"\n❌ 测试失败: {e}")
         import traceback
         traceback.print_exc()
 

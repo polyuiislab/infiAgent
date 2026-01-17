@@ -337,16 +337,29 @@ tools:
     level: 0
     type: tool_call_agent
     name: "create_image"
-    description: "根据提示词生成图片，并保存到指定路径。"
+    description: "根据提示词生成图片，或基于参考图进行图片编辑/融合/风格迁移。支持最多 14 张参考图（Gemini 3 Pro）。"
     parameters:
       type: "object"
       properties:
         prompt:
           type: "string"
-          description: "图片的描述提示词。"
+          description: "图片的描述提示词或编辑指令。纯生成时描述要生成的图片；有参考图时描述如何处理参考图（如'融合这两张图'、'将第一张图转为梵高风格'）。"
         image_path:
           type: "string"
-          description: "生成图片保存的相对路径（例如 'upload/generated_image.png'）。"
+          description: "生成图片保存的相对路径（例如 'temp/generated_image.png'）。"
+        reference_images:
+          type: "array"
+          items:
+            type: "string"
+          description: "参考图片相对路径列表，可选。用于图片编辑、风格迁移、多图融合等。不提供则为纯文本生成图片。"
+        size:
+          type: "string"
+          default: "1024x1024"
+          description: "生成图片尺寸，默认 '1024x1024'。支持 '1792x1024'（16:9）等。"
+        n:
+          type: "integer"
+          default: 1
+          description: "生成图片数量，默认 1。"
       required: ["prompt", "image_path"]
 
   audio_tool:
@@ -494,6 +507,392 @@ tools:
           type: "string"
           description: "输出 DOCX 文件的相对路径，可选。不指定则使用源文件名改后缀。"
       required: ["source_path"]
+
+  images_to_ppt:
+    level: 0
+    type: tool_call_agent
+    name: "images_to_ppt"
+    description: "将多张图片转换为 PowerPoint 演示文稿，每张图片占一页。PPT 尺寸自动根据第一张图片的宽高比设置，所有图片居中显示并保持比例。适合将多张图表、截图等快速制作成演示文稿。"
+    parameters:
+      type: "object"
+      properties:
+        image_paths:
+          type: "array"
+          items:
+            type: "string"
+          description: "图片文件相对路径列表，例如 ['chart1.png', 'chart2.png']。也可以是单个字符串。"
+        output_path:
+          type: "string"
+          description: "输出 PPT 文件的相对路径，例如 'presentation.pptx'。"
+      required: ["image_paths", "output_path"]
+
+  # ==================== 浏览器操作工具 ====================
+
+  browser_launch:
+    level: 0
+    type: tool_call_agent
+    name: "browser_launch"
+    description: "启动浏览器会话。默认打开有界面的浏览器窗口（非无头模式），创建第一个标签页 page_0。返回 browser_id 用于后续操作。会自动创建 temp/browser/{browser_id}/ 目录保存截图和页面内容。"
+    parameters:
+      type: "object"
+      properties:
+        headless:
+          type: "boolean"
+          default: false
+          description: "是否无头模式（不显示浏览器窗口），默认 false（显示窗口）。"
+        width:
+          type: "integer"
+          default: 1280
+          description: "浏览器窗口宽度（像素），默认 1280。"
+        height:
+          type: "integer"
+          default: 800
+          description: "浏览器窗口高度（像素），默认 800。"
+      required: []
+
+  browser_close:
+    level: 0
+    type: tool_call_agent
+    name: "browser_close"
+    description: "关闭浏览器会话。会关闭所有标签页并清理资源。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID（由 browser_launch 返回）。"
+      required: ["browser_id"]
+
+  browser_navigate:
+    level: 0
+    type: tool_call_agent
+    name: "browser_navigate"
+    description: "在当前活跃标签页导航到指定 URL。导航后自动截图并保存页面内容到 temp/browser/{browser_id}/current.png 和 page_content.md。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        url:
+          type: "string"
+          description: "目标 URL，例如 'https://www.example.com'。"
+        wait_until:
+          type: "string"
+          enum: ["load", "domcontentloaded", "networkidle"]
+          default: "load"
+          description: "等待条件：load（页面加载完成）、domcontentloaded（DOM加载完成）、networkidle（网络空闲）。默认 load。"
+      required: ["browser_id", "url"]
+
+  browser_snapshot:
+    level: 0
+    type: tool_call_agent
+    name: "browser_snapshot"
+    description: "获取当前活跃标签页的快照。更新截图和页面文本内容。返回页面标题、URL、截图路径。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        include_html:
+          type: "boolean"
+          default: false
+          description: "是否包含 HTML 源码，默认 false。如果为 true，会保存到 page_source.html。"
+      required: ["browser_id"]
+
+  browser_execute_js:
+    level: 0
+    type: tool_call_agent
+    name: "browser_execute_js"
+    description: "在当前活跃标签页执行 JavaScript 代码。这是最强大的浏览器操作工具，可以实现任意页面操作（点击、输入、滚动、提取数据等）。执行后自动截图。注意：JavaScript 代码必须是函数表达式，如 '() => { return document.title; }'。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        script:
+          type: "string"
+          description: "要执行的 JavaScript 代码。必须是函数表达式，如 '() => { ... }'。示例：'() => document.querySelector(\"#btn\").click()' 或 '() => { return Array.from(document.querySelectorAll(\".item\")).map(el => el.textContent); }'。"
+        save_result:
+          type: "boolean"
+          default: false
+          description: "是否将执行结果保存到 js_result.json 文件，默认 false。"
+      required: ["browser_id", "script"]
+
+  browser_new_page:
+    level: 0
+    type: tool_call_agent
+    name: "browser_new_page"
+    description: "在当前浏览器会话中新建一个标签页。新标签页会自动成为活跃页面。返回新的 page_id（如 page_1, page_2）。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+      required: ["browser_id"]
+
+  browser_switch_page:
+    level: 0
+    type: tool_call_agent
+    name: "browser_switch_page"
+    description: "切换到指定的标签页，使其成为活跃页面。切换后会自动更新截图和页面内容。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        page_id:
+          type: "string"
+          description: "要切换到的页面ID，例如 'page_0', 'page_1'。可通过 browser_list_pages 查看所有页面。"
+      required: ["browser_id", "page_id"]
+
+  browser_close_page:
+    level: 0
+    type: tool_call_agent
+    name: "browser_close_page"
+    description: "关闭指定的标签页。如果关闭的是活跃页面，会自动切换到第一个页面。不能关闭唯一的标签页（至少保留一个）。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        page_id:
+          type: "string"
+          description: "要关闭的页面ID，例如 'page_1'。"
+      required: ["browser_id", "page_id"]
+
+  browser_list_pages:
+    level: 0
+    type: tool_call_agent
+    name: "browser_list_pages"
+    description: "列出当前浏览器会话的所有标签页。显示每个页面的 page_id、标题、URL、是否为活跃页面。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+      required: ["browser_id"]
+
+  browser_click:
+    level: 0
+    type: tool_call_agent
+    name: "browser_click"
+    description: "点击当前页面的指定元素。使用 CSS 选择器定位元素。点击后自动截图。如果元素难以点击，建议使用 browser_execute_js 执行 JavaScript 点击。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        selector:
+          type: "string"
+          description: "CSS 选择器，例如 '#submit-btn', '.button', 'button[type=\"submit\"]'。"
+        timeout:
+          type: "integer"
+          default: 5000
+          description: "等待元素出现的超时时间（毫秒），默认 5000。"
+      required: ["browser_id", "selector"]
+
+  browser_type:
+    level: 0
+    type: tool_call_agent
+    name: "browser_type"
+    description: "在指定的输入框输入文本。使用 CSS 选择器定位输入框。输入后自动截图。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        selector:
+          type: "string"
+          description: "输入框的 CSS 选择器，例如 '#username', 'input[name=\"email\"]'。"
+        text:
+          type: "string"
+          description: "要输入的文本内容。"
+        clear_first:
+          type: "boolean"
+          default: true
+          description: "是否先清空输入框，默认 true。"
+      required: ["browser_id", "selector", "text"]
+
+  browser_wait:
+    level: 0
+    type: tool_call_agent
+    name: "browser_wait"
+    description: "等待指定条件满足。可以等待元素出现、页面导航完成或指定时间。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        wait_type:
+          type: "string"
+          enum: ["selector", "navigation", "timeout"]
+          description: "等待类型：selector（等待元素出现）、navigation（等待导航完成）、timeout（等待指定时间）。"
+        selector:
+          type: "string"
+          description: "CSS 选择器（wait_type='selector' 时必需）。"
+        timeout:
+          type: "integer"
+          default: 30000
+          description: "超时时间（毫秒），默认 30000。"
+        milliseconds:
+          type: "integer"
+          description: "等待时长（毫秒，wait_type='timeout' 时必需）。"
+      required: ["browser_id", "wait_type"]
+
+  browser_mouse_move:
+    level: 0
+    type: tool_call_agent
+    name: "browser_mouse_move"
+    description: "移动鼠标到指定坐标位置。支持人类化移动（贝塞尔曲线轨迹）模拟真实用户行为，避免人机验证检测。适用于需要精确控制鼠标位置的场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        x:
+          type: "number"
+          description: "目标 x 坐标（像素）。"
+        y:
+          type: "number"
+          description: "目标 y 坐标（像素）。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化移动（贝塞尔曲线轨迹），默认 true。设为 false 则直接瞬移到目标位置。"
+      required: ["browser_id", "x", "y"]
+
+  browser_mouse_click_coords:
+    level: 0
+    type: tool_call_agent
+    name: "browser_mouse_click_coords"
+    description: "在指定坐标位置点击鼠标。支持左键/右键/中键、单击/双击、人类化点击（随机延迟和轨迹）。适用于动态元素、Canvas/SVG 区域、无法用选择器定位的元素。特别适合处理滑块验证码等场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        x:
+          type: "number"
+          description: "点击的 x 坐标（像素）。"
+        y:
+          type: "number"
+          description: "点击的 y 坐标（像素）。"
+        button:
+          type: "string"
+          enum: ["left", "right", "middle"]
+          default: "left"
+          description: "鼠标按钮：left（左键）、right（右键）、middle（中键），默认 left。"
+        click_count:
+          type: "integer"
+          default: 1
+          description: "点击次数，1为单击，2为双击，默认 1。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化点击（贝塞尔曲线移动+随机延迟），默认 true。推荐在需要绕过人机验证时启用。"
+      required: ["browser_id", "x", "y"]
+
+  browser_drag_and_drop:
+    level: 0
+    type: tool_call_agent
+    name: "browser_drag_and_drop"
+    description: "执行鼠标拖拽操作，从起点拖动到终点。支持人类化拖拽（贝塞尔曲线轨迹+随机延迟）模拟真实用户行为。主要用于：1) 滑块验证码（重要！）2) 拖拽排序 3) 地图平移/缩放 4) 拖拽文件上传 5) 任何需要拖拽的交互。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        from_x:
+          type: "number"
+          description: "起始 x 坐标（像素）。"
+        from_y:
+          type: "number"
+          description: "起始 y 坐标（像素）。"
+        to_x:
+          type: "number"
+          description: "目标 x 坐标（像素）。"
+        to_y:
+          type: "number"
+          description: "目标 y 坐标（像素）。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化拖拽（贝塞尔曲线轨迹+随机延迟），默认 true。强烈推荐在处理验证码时启用。"
+      required: ["browser_id", "from_x", "from_y", "to_x", "to_y"]
+
+  browser_hover:
+    level: 0
+    type: tool_call_agent
+    name: "browser_hover"
+    description: "鼠标悬停在元素或坐标上，停留指定时长。支持人类化移动。用于触发悬停菜单、查看 tooltip、触发延迟加载内容等场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        selector:
+          type: "string"
+          description: "要悬停的元素 CSS 选择器（selector 和坐标二选一）。"
+        x:
+          type: "number"
+          description: "悬停的 x 坐标（selector 和坐标二选一）。"
+        y:
+          type: "number"
+          description: "悬停的 y 坐标（selector 和坐标二选一）。"
+        duration_ms:
+          type: "integer"
+          default: 1000
+          description: "悬停持续时间（毫秒），默认 1000。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化移动（贝塞尔曲线轨迹），默认 true。"
+      required: ["browser_id"]
+
+  browser_scroll:
+    level: 0
+    type: tool_call_agent
+    name: "browser_scroll"
+    description: "使用鼠标滚轮滚动页面或指定元素。支持平滑滚动模拟真实用户行为。可以滚动整个页面，也可以滚动指定元素（如滚动容器、iframe 等）。用于查看页面更多内容、触发懒加载、滚动到特定位置等场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        delta_y:
+          type: "integer"
+          description: "垂直滚动距离（像素）。正数向下滚动，负数向上滚动。例如：500 向下滚动500像素，-300 向上滚动300像素。"
+        delta_x:
+          type: "integer"
+          default: 0
+          description: "水平滚动距离（像素），可选，默认 0。正数向右滚动，负数向左滚动。"
+        selector:
+          type: "string"
+          description: "要滚动的元素 CSS 选择器，可选。不指定则滚动整个页面。指定后会先移动鼠标到该元素，然后滚动该元素。"
+        smooth:
+          type: "boolean"
+          default: true
+          description: "是否平滑滚动（分多次小步滚动），默认 true。平滑滚动更像真实用户，但稍慢。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否先使用人类化移动鼠标到元素（仅在指定 selector 时有效），默认 true。"
+      required: ["browser_id", "delta_y"]
 
   # ==================== 人类交互工具 ====================
 

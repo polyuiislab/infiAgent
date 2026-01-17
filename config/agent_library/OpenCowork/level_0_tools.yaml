@@ -1,0 +1,1076 @@
+tools:
+  # ==================== 文件操作工具 ====================
+  
+  file_read:
+    level: 0
+    type: tool_call_agent
+    name: "file_read"
+    description: "读取指定文件的内容。可以读取单个或多个文件。可以读取整个文件或指定起始和结束行。默认返回带行号的 JSON 格式。警告：不要读取二进制文件（如 pdf,docx、图片等）。"
+    parameters:
+      type: "object"
+      properties:
+        path:
+          type: "array"
+          items:
+            type: "string"
+          description: "文件路径数组。单个文件传 ['file.txt']，多个文件传 ['file1.txt', 'file2.txt']。只允许读取文本文件，不要读取二进制文件。"
+        start_line:
+          type: "integer"
+          description: "读取起始行号（从1开始），可选。多文件模式下应用于所有文件。"
+        end_line:
+          type: "integer"
+          description: "读取结束行号（包含），可选。多文件模式下应用于所有文件。"
+        encoding:
+          type: "string"
+          description: "文件编码，可选。不指定时自动检测。"
+        show_line_numbers:
+          type: "boolean"
+          default: true
+          description: "是否显示行号。true 返回 JSON 格式（含行号），false 返回纯文本。默认 true。"
+      required: ["path"]
+
+  file_write:
+    level: 0
+    type: tool_call_agent
+    name: "file_write"
+    description: "向指定文件写入内容。如果文件不存在会自动创建；如果存在可以选择覆盖或追加。也支持替换指定行。注意：禁止写入 reference.bib 文件，请使用专门的参考文献管理工具（reference_add/reference_delete）。"
+    parameters:
+      type: "object"
+      properties:
+        path:
+          type: "string"
+          description: "文件的相对路径，例如 'src/main.py'。写入前建议使用目录列表工具检查是否有同名文件，避免覆盖他人文件。禁止路径为 'reference.bib'。"
+        content:
+          type: "string"
+          description: "要写入的文本内容。"
+        mode:
+          type: "string"
+          enum: ["write", "append"]
+          default: "write"
+          description: "写入模式。'write' 覆盖整个文件，'append' 追加到文件末尾。"
+        start_line:
+          type: "integer"
+          description: "行替换模式 - 起始行号（从1开始），可选。"
+        end_line:
+          type: "integer"
+          description: "行替换模式 - 结束行号，可选。"
+      required: ["path", "content"]
+  
+  dir_list:
+    level: 0
+    type: tool_call_agent
+    name: "dir_list"
+    description: "列出指定目录的内容。可以递归列出所有子目录和文件（自动排除 code_env 目录）。"
+    parameters:
+      type: "object"
+      properties:
+        path:
+          type: "string"
+          default: "."
+          description: "要列出的目录路径。不指定时列出任务根目录。"
+        recursive:
+          type: "boolean"
+          default: false
+          description: "是否递归列出子目录，默认 false。"
+      required: []
+
+  dir_create:
+    level: 0
+    type: tool_call_agent
+    name: "dir_create"
+    description: "创建新目录。如果父目录不存在会自动创建。"
+    parameters:
+      type: "object"
+      properties:
+        path:
+          type: "string"
+          description: "要创建的目录路径。"
+      required: ["path"]
+
+  file_move:
+    level: 0
+    type: tool_call_agent
+    name: "file_move"
+    description: "移动或复制文件/目录。可以选择是移动还是复制（保留原文件）。"
+    parameters:
+      type: "object"
+      properties:
+        source:
+          # type: "string"
+          # description: "源文件或目录的相对路径。"
+          # path:
+          type: "array"
+          items:
+            type: "string"
+          description: "源文件或目录的相对路径组，可以单个或多个"
+        destination:
+          type: "string"
+          description: "目标路径。"
+        copy:
+          type: "boolean"
+          default: false
+          description: "是否复制（保留原文件），默认 false（移动）。"
+      required: ["source", "destination"]
+
+  file_delete:
+    level: 0
+    type: tool_call_agent
+    name: "file_delete"
+    description: "删除指定的文件或目录。"
+    parameters:
+      type: "object"
+      properties:
+        path:
+          type: "string"
+          description: "要删除的文件或目录的相对路径。"
+      required: ["path"]
+
+  # ==================== 网络工具 ====================
+
+  web_search:
+    level: 0
+    type: tool_call_agent
+    name: "web_search"
+    description: "使用 DuckDuckGo 进行网络搜索。结果会保存为 Markdown 格式。"
+    parameters:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "搜索关键词或问题。"
+        max_results:
+          type: "integer"
+          default: 10
+          description: "返回的最大结果数，默认 10。"
+        save_path:
+          type: "string"
+          description: "保存搜索结果的相对路径（.md 文件），请保存在 temp/web_search目录中。"
+      required: ["query","save_path"]
+
+  google_scholar_search:
+    level: 0
+    type: tool_call_agent
+    name: "google_scholar_search"
+    description: "在 Google Scholar 上搜索学术论文。支持年份筛选和分页。搜索结果保存为 Markdown 文件。"
+    parameters:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "搜索关键词或主题。"
+        year_low:
+          type: "integer"
+          description: "筛选论文的起始年份，可选。"
+        year_high:
+          type: "integer"
+          description: "筛选论文的结束年份，可选。"
+        pages:
+          type: "integer"
+          default: 1
+          description: "爬取的搜索结果页数，每页约10篇论文。"
+        save_path:
+          type: "string"
+          description: "保存搜索结果的相对路径（.md 文件)。请保存在 temp/scholar_search目录中。"
+      required: ["query","save_path"]
+
+  arxiv_search:
+    level: 0
+    type: tool_call_agent
+    name: "arxiv_search"
+    description: "搜索 arXiv 预印本论文库。返回论文标题、作者、摘要、PDF 下载地址等信息。"
+    parameters:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "搜索关键词，例如 'transformer neural network'。"
+        max_results:
+          type: "integer"
+          default: 10
+          description: "返回的最大结果数，默认 10。"
+        sort_by:
+          type: "string"
+          enum: ["relevance", "lastUpdatedDate", "submittedDate"]
+          default: "relevance"
+          description: "排序方式：relevance（相关性）、lastUpdatedDate（更新时间）、submittedDate（提交时间）。"
+        sort_order:
+          type: "string"
+          enum: ["descending", "ascending"]
+          default: "descending"
+          description: "排序顺序：descending（降序）、ascending（升序）。"
+        save_path:
+          type: "string"
+          description: "保存搜索结果的相对路径（.md 文件）。请保存在 temp/arxiv_search目录中。"
+      required: ["query","save_path"]
+
+  crawl_page:
+    level: 0
+    type: tool_call_agent
+    name: "crawl_page"
+    description: "爬取指定 URL 的网页内容，转换为 Markdown 格式。使用 crawl4ai 智能提取。"
+    parameters:
+      type: "object"
+      properties:
+        url:
+          type: "string"
+          description: "要爬取的网页完整 URL。"
+        save_path:
+          type: "string"
+          description: "保存 Markdown 文件的相对路径，必选。不指定则直接返回内容。请保存在 temp/crawl_page目录中。"
+        download_images:
+          type: "boolean"
+          default: false
+          description: "是否下载图片，默认 false（移除图片）。"
+      required: ["url","save_path"]
+
+  file_download:
+    level: 0
+    type: tool_call_agent
+    name: "file_download"
+    description: "从 URL 下载文件到本地。"
+    parameters:
+      type: "object"
+      properties:
+        url:
+          type: "string"
+          description: "要下载的文件 URL。"
+        save_path:
+          type: "string"
+          description: "保存文件的相对路径，例如 'upload/file.pdf'。"
+      required: ["url", "save_path"]
+
+  # ==================== 参考文献管理工具 ====================
+
+  reference_list:
+    level: 0
+    type: tool_call_agent
+    name: "reference_list"
+    description: "列出 reference.bib 文件中的所有参考文献（显示原文）。"
+    parameters:
+      type: "object"
+      properties:
+        bib_path:
+          type: "string"
+          default: "reference.bib"
+          description: "bib文件相对路径，默认 'reference.bib'。"
+      required: []
+
+  reference_add:
+    level: 0
+    type: tool_call_agent
+    name: "reference_add"
+    description: "向 reference.bib 添加参考文献。如果引用键已存在则覆盖原有内容。"
+    parameters:
+      type: "object"
+      properties:
+        entries:
+          type: "array"
+          items:
+            type: "string"
+          description: "参考文献字符串数组，每个元素是一条完整的bib条目。例如：['@article{key1,...}', '@book{key2,...}']"
+        bib_path:
+          type: "string"
+          default: "reference.bib"
+          description: "bib文件相对路径，默认 'reference.bib'。"
+      required: ["entries"]
+
+  reference_delete:
+    level: 0
+    type: tool_call_agent
+    name: "reference_delete"
+    description: "从 reference.bib 删除指定的参考文献。"
+    parameters:
+      type: "object"
+      properties:
+        keys:
+          type: "array"
+          items:
+            type: "string"
+          description: "要删除的引用键（如 'sun2023blockchain'）或引用键数组。"
+        bib_path:
+          type: "string"
+          default: "reference.bib"
+          description: "bib文件相对路径，默认 'reference.bib'。"
+      required: ["keys"]
+
+  # ==================== 文档处理工具 ====================
+
+  parse_document:
+    level: 0
+    type: tool_call_agent
+    name: "parse_document"
+    description: "解析二进制文档为纯文本文件，不提供总结，分析服务。支持 PDF、Word、Markdown 格式。"
+    parameters:
+      type: "object"
+      properties:
+        path:
+          type: "string"
+          description: "要解析的文档相对路径。"
+        save_path:
+          type: "string"
+          description: "保存解析结果的相对路径。请保存在 temp/parse_document目录中。"
+      required: ["path","save_path"]
+
+  vision_tool:
+    level: 0
+    type: tool_call_agent
+    name: "vision_tool"
+    description: "使用LLM Vision模型分析图片内容。可以识别图片中的内容、描述场景、回答问题等。"
+    parameters:
+      type: "object"
+      properties:
+        image_path:
+          type: "string"
+          description: "图片文件的相对路径（相对于任务目录）。"
+        question:
+          type: "string"
+          description: "要问的问题，例如'这是什么？'或'请描述图片中的内容'。不指定则默认描述图片内容。"
+        save_path:
+          type: "string"
+          description: "必选，保存结果的相对路径,保存为纯文本文件 md或者 txt。请保存在 temp/answer_figuers目录中。"
+        # model:
+        #   type: "string"
+        #   description: "要使用的模型名称，可选。不指定则使用配置中的默认模型。"
+      required: ["image_path","save_path"]
+
+  create_image:
+    level: 0
+    type: tool_call_agent
+    name: "create_image"
+    description: "根据提示词生成图片，或基于参考图进行图片编辑/融合/风格迁移。支持最多 14 张参考图（Gemini 3 Pro）。"
+    parameters:
+      type: "object"
+      properties:
+        prompt:
+          type: "string"
+          description: "图片的描述提示词或编辑指令。纯生成时描述要生成的图片；有参考图时描述如何处理参考图（如'融合这两张图'、'将第一张图转为梵高风格'）。"
+        image_path:
+          type: "string"
+          description: "生成图片保存的相对路径（例如 'temp/generated_image.png'）。"
+        reference_images:
+          type: "array"
+          items:
+            type: "string"
+          description: "参考图片相对路径列表，可选。用于图片编辑、风格迁移、多图融合等。不提供则为纯文本生成图片。"
+        size:
+          type: "string"
+          default: "1024x1024"
+          description: "生成图片尺寸，默认 '1024x1024'。支持 '1792x1024'（16:9）等。"
+        n:
+          type: "integer"
+          default: 1
+          description: "生成图片数量，默认 1。"
+      required: ["prompt", "image_path"]
+
+  audio_tool:
+    level: 0
+    type: tool_call_agent
+    name: "audio_tool"
+    description: "使用LLM Audio模型分析音频内容。可以识别音频中的内容、描述场景、回答问题等。支持 mp3、wav、m4a 等格式。"
+    parameters:
+      type: "object"
+      properties:
+        audio_path:
+          type: "string"
+          description: "音频文件的相对路径（相对于任务目录）。"
+        question:
+          type: "string"
+          description: "要问的问题，例如'这段音频讲了什么？'或'请描述音频内容'。不指定则默认描述音频内容。"
+        model:
+          type: "string"
+          description: "要使用的模型名称，可选。不指定则使用配置中的默认模型。"
+      required: ["audio_path"]
+
+  paper_analyze_tool:
+    level: 0
+    type: tool_call_agent
+    name: "paper_analyze_tool"
+    description: "解析论文文档并使用LLM分析论文内容。可以总结论文、回答关于论文的问题等。"
+    parameters:
+      type: "object"
+      properties:
+        paper_path:
+          type: "string"
+          description: "论文文件的相对路径（相对于任务目录），支持PDF、Word等格式。"
+        question:
+          type: "string"
+          description: "要问的问题，例如'这篇论文的主要贡献是什么？'不指定则默认总结论文内容。"
+        parse_save_path:
+          type: "string"
+          description: "保存解析结果的相对路径，可选。"
+      required: ["paper_path"]
+
+  md_to_pdf:
+    level: 0
+    type: tool_call_agent
+    name: "md_to_pdf"
+    description: "将 Markdown 文件转换为 PDF。支持数学公式、表格、中文。调用远程 Pandoc API 服务。"
+    parameters:
+      type: "object"
+      properties:
+        source_path:
+          type: "string"
+          description: "Markdown 源文件的相对路径。"
+        output_path:
+          type: "string"
+          description: "输出 PDF 文件的相对路径，可选。不指定则使用源文件名改后缀。"
+        engine:
+          type: "string"
+          enum: ["pdflatex", "xelatex", "lualatex"]
+          default: "xelatex"
+          description: "PDF 编译引擎。xelatex 支持中文（推荐），pdflatex 适合英文。"
+      required: ["source_path"]
+
+  md_to_docx:
+    level: 0
+    type: tool_call_agent
+    name: "md_to_docx"
+    description: "将 Markdown 文件转换为 Word 文档（.docx）。调用远程 Pandoc API 服务。"
+    parameters:
+      type: "object"
+      properties:
+        source_path:
+          type: "string"
+          description: "Markdown 源文件的相对路径。"
+        output_path:
+          type: "string"
+          description: "输出 DOCX 文件的相对路径，可选。不指定则使用源文件名改后缀。"
+      required: ["source_path"]
+
+  file_download:
+    level: 0
+    type: tool_call_agent
+    name: "file_download"
+    description: "从指定 URL 下载文件到本地。"
+    parameters:
+      type: "object"
+      properties:
+        url:
+          type: "string"
+          description: "要下载的文件 URL。"
+        save_path:
+          type: "string"
+          description: "保存文件的相对路径，例如 'upload/file.pdf'。"
+      required: ["url", "save_path"]
+
+  # ==================== 文档处理工具 ====================
+
+  # parse_document:
+  #   level: 0
+  #   type: tool_call_agent
+  #   name: "parse_document"
+  #   description: "解析文档文件并提取文本内容。支持 PDF、Word、Markdown 格式。使用 pdfplumber 高质量提取 PDF（包含表格）。"
+  #   parameters:
+  #     type: "object"
+  #     properties:
+  #       path:
+  #         type: "string"
+  #         description: "要解析的文档相对路径。"
+  #       save_path:
+  #         type: "string"
+  #         description: "保存解析结果的相对路径，可选。不指定则直接返回内容。"
+  #     required: ["path"]
+
+  md_to_pdf:
+    level: 0
+    type: tool_call_agent
+    name: "md_to_pdf"
+    description: "将 Markdown 文件转换为 PDF。支持数学公式、表格、中文。调用远程 Pandoc API 服务。"
+    parameters:
+      type: "object"
+      properties:
+        source_path:
+          type: "string"
+          description: "Markdown 源文件的相对路径。"
+        output_path:
+          type: "string"
+          description: "输出 PDF 文件的相对路径，可选。不指定则使用源文件名改后缀。"
+        engine:
+          type: "string"
+          enum: ["pdflatex", "xelatex", "lualatex"]
+          default: "xelatex"
+          description: "PDF 编译引擎。xelatex 支持中文（推荐），pdflatex 适合英文。"
+      required: ["source_path"]
+
+  md_to_docx:
+    level: 0
+    type: tool_call_agent
+    name: "md_to_docx"
+    description: "将 Markdown 文件转换为 Word 文档（.docx）。调用远程 Pandoc API 服务。"
+    parameters:
+      type: "object"
+      properties:
+        source_path:
+          type: "string"
+          description: "Markdown 源文件的相对路径。"
+        output_path:
+          type: "string"
+          description: "输出 DOCX 文件的相对路径，可选。不指定则使用源文件名改后缀。"
+      required: ["source_path"]
+
+  images_to_ppt:
+    level: 0
+    type: tool_call_agent
+    name: "images_to_ppt"
+    description: "将多张图片转换为 PowerPoint 演示文稿，每张图片占一页。PPT 尺寸自动根据第一张图片的宽高比设置，所有图片居中显示并保持比例。适合将多张图表、截图等快速制作成演示文稿。"
+    parameters:
+      type: "object"
+      properties:
+        image_paths:
+          type: "array"
+          items:
+            type: "string"
+          description: "图片文件相对路径列表，例如 ['chart1.png', 'chart2.png']。也可以是单个字符串。"
+        output_path:
+          type: "string"
+          description: "输出 PPT 文件的相对路径，例如 'presentation.pptx'。"
+      required: ["image_paths", "output_path"]
+
+  # ==================== 浏览器操作工具 ====================
+
+  browser_launch:
+    level: 0
+    type: tool_call_agent
+    name: "browser_launch"
+    description: "启动浏览器会话。默认打开有界面的浏览器窗口（非无头模式），创建第一个标签页 page_0。返回 browser_id 用于后续操作。会自动创建 temp/browser/{browser_id}/ 目录保存截图和页面内容。"
+    parameters:
+      type: "object"
+      properties:
+        headless:
+          type: "boolean"
+          default: false
+          description: "是否无头模式（不显示浏览器窗口），默认 false（显示窗口）。"
+        width:
+          type: "integer"
+          default: 1280
+          description: "浏览器窗口宽度（像素），默认 1280。"
+        height:
+          type: "integer"
+          default: 800
+          description: "浏览器窗口高度（像素），默认 800。"
+      required: []
+
+  browser_close:
+    level: 0
+    type: tool_call_agent
+    name: "browser_close"
+    description: "关闭浏览器会话。会关闭所有标签页并清理资源。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID（由 browser_launch 返回）。"
+      required: ["browser_id"]
+
+  browser_navigate:
+    level: 0
+    type: tool_call_agent
+    name: "browser_navigate"
+    description: "在当前活跃标签页导航到指定 URL。导航后自动截图并保存页面内容到 temp/browser/{browser_id}/current.png 和 page_content.md。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        url:
+          type: "string"
+          description: "目标 URL，例如 'https://www.example.com'。"
+        wait_until:
+          type: "string"
+          enum: ["load", "domcontentloaded", "networkidle"]
+          default: "load"
+          description: "等待条件：load（页面加载完成）、domcontentloaded（DOM加载完成）、networkidle（网络空闲）。默认 load。"
+      required: ["browser_id", "url"]
+
+  browser_snapshot:
+    level: 0
+    type: tool_call_agent
+    name: "browser_snapshot"
+    description: "获取当前活跃标签页的快照。更新截图和页面文本内容。返回页面标题、URL、截图路径。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        include_html:
+          type: "boolean"
+          default: false
+          description: "是否包含 HTML 源码，默认 false。如果为 true，会保存到 page_source.html。"
+      required: ["browser_id"]
+
+  browser_execute_js:
+    level: 0
+    type: tool_call_agent
+    name: "browser_execute_js"
+    description: "在当前活跃标签页执行 JavaScript 代码。这是最强大的浏览器操作工具，可以实现任意页面操作（点击、输入、滚动、提取数据等）。执行后自动截图。注意：JavaScript 代码必须是函数表达式，如 '() => { return document.title; }'。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        script:
+          type: "string"
+          description: "要执行的 JavaScript 代码。必须是函数表达式，如 '() => { ... }'。示例：'() => document.querySelector(\"#btn\").click()' 或 '() => { return Array.from(document.querySelectorAll(\".item\")).map(el => el.textContent); }'。"
+        save_result:
+          type: "boolean"
+          default: false
+          description: "是否将执行结果保存到 js_result.json 文件，默认 false。"
+      required: ["browser_id", "script"]
+
+  browser_new_page:
+    level: 0
+    type: tool_call_agent
+    name: "browser_new_page"
+    description: "在当前浏览器会话中新建一个标签页。新标签页会自动成为活跃页面。返回新的 page_id（如 page_1, page_2）。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+      required: ["browser_id"]
+
+  browser_switch_page:
+    level: 0
+    type: tool_call_agent
+    name: "browser_switch_page"
+    description: "切换到指定的标签页，使其成为活跃页面。切换后会自动更新截图和页面内容。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        page_id:
+          type: "string"
+          description: "要切换到的页面ID，例如 'page_0', 'page_1'。可通过 browser_list_pages 查看所有页面。"
+      required: ["browser_id", "page_id"]
+
+  browser_close_page:
+    level: 0
+    type: tool_call_agent
+    name: "browser_close_page"
+    description: "关闭指定的标签页。如果关闭的是活跃页面，会自动切换到第一个页面。不能关闭唯一的标签页（至少保留一个）。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        page_id:
+          type: "string"
+          description: "要关闭的页面ID，例如 'page_1'。"
+      required: ["browser_id", "page_id"]
+
+  browser_list_pages:
+    level: 0
+    type: tool_call_agent
+    name: "browser_list_pages"
+    description: "列出当前浏览器会话的所有标签页。显示每个页面的 page_id、标题、URL、是否为活跃页面。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+      required: ["browser_id"]
+
+  browser_click:
+    level: 0
+    type: tool_call_agent
+    name: "browser_click"
+    description: "点击当前页面的指定元素。使用 CSS 选择器定位元素。点击后自动截图。如果元素难以点击，建议使用 browser_execute_js 执行 JavaScript 点击。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        selector:
+          type: "string"
+          description: "CSS 选择器，例如 '#submit-btn', '.button', 'button[type=\"submit\"]'。"
+        timeout:
+          type: "integer"
+          default: 5000
+          description: "等待元素出现的超时时间（毫秒），默认 5000。"
+      required: ["browser_id", "selector"]
+
+  browser_type:
+    level: 0
+    type: tool_call_agent
+    name: "browser_type"
+    description: "在指定的输入框输入文本。使用 CSS 选择器定位输入框。输入后自动截图。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        selector:
+          type: "string"
+          description: "输入框的 CSS 选择器，例如 '#username', 'input[name=\"email\"]'。"
+        text:
+          type: "string"
+          description: "要输入的文本内容。"
+        clear_first:
+          type: "boolean"
+          default: true
+          description: "是否先清空输入框，默认 true。"
+      required: ["browser_id", "selector", "text"]
+
+  browser_wait:
+    level: 0
+    type: tool_call_agent
+    name: "browser_wait"
+    description: "等待指定条件满足。可以等待元素出现、页面导航完成或指定时间。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        wait_type:
+          type: "string"
+          enum: ["selector", "navigation", "timeout"]
+          description: "等待类型：selector（等待元素出现）、navigation（等待导航完成）、timeout（等待指定时间）。"
+        selector:
+          type: "string"
+          description: "CSS 选择器（wait_type='selector' 时必需）。"
+        timeout:
+          type: "integer"
+          default: 30000
+          description: "超时时间（毫秒），默认 30000。"
+        milliseconds:
+          type: "integer"
+          description: "等待时长（毫秒，wait_type='timeout' 时必需）。"
+      required: ["browser_id", "wait_type"]
+
+  browser_mouse_move:
+    level: 0
+    type: tool_call_agent
+    name: "browser_mouse_move"
+    description: "移动鼠标到指定坐标位置。支持人类化移动（贝塞尔曲线轨迹）模拟真实用户行为，避免人机验证检测。适用于需要精确控制鼠标位置的场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        x:
+          type: "number"
+          description: "目标 x 坐标（像素）。"
+        y:
+          type: "number"
+          description: "目标 y 坐标（像素）。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化移动（贝塞尔曲线轨迹），默认 true。设为 false 则直接瞬移到目标位置。"
+      required: ["browser_id", "x", "y"]
+
+  browser_mouse_click_coords:
+    level: 0
+    type: tool_call_agent
+    name: "browser_mouse_click_coords"
+    description: "在指定坐标位置点击鼠标。支持左键/右键/中键、单击/双击、人类化点击（随机延迟和轨迹）。适用于动态元素、Canvas/SVG 区域、无法用选择器定位的元素。特别适合处理滑块验证码等场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        x:
+          type: "number"
+          description: "点击的 x 坐标（像素）。"
+        y:
+          type: "number"
+          description: "点击的 y 坐标（像素）。"
+        button:
+          type: "string"
+          enum: ["left", "right", "middle"]
+          default: "left"
+          description: "鼠标按钮：left（左键）、right（右键）、middle（中键），默认 left。"
+        click_count:
+          type: "integer"
+          default: 1
+          description: "点击次数，1为单击，2为双击，默认 1。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化点击（贝塞尔曲线移动+随机延迟），默认 true。推荐在需要绕过人机验证时启用。"
+      required: ["browser_id", "x", "y"]
+
+  browser_drag_and_drop:
+    level: 0
+    type: tool_call_agent
+    name: "browser_drag_and_drop"
+    description: "执行鼠标拖拽操作，从起点拖动到终点。支持人类化拖拽（贝塞尔曲线轨迹+随机延迟）模拟真实用户行为。主要用于：1) 滑块验证码（重要！）2) 拖拽排序 3) 地图平移/缩放 4) 拖拽文件上传 5) 任何需要拖拽的交互。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        from_x:
+          type: "number"
+          description: "起始 x 坐标（像素）。"
+        from_y:
+          type: "number"
+          description: "起始 y 坐标（像素）。"
+        to_x:
+          type: "number"
+          description: "目标 x 坐标（像素）。"
+        to_y:
+          type: "number"
+          description: "目标 y 坐标（像素）。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化拖拽（贝塞尔曲线轨迹+随机延迟），默认 true。强烈推荐在处理验证码时启用。"
+      required: ["browser_id", "from_x", "from_y", "to_x", "to_y"]
+
+  browser_hover:
+    level: 0
+    type: tool_call_agent
+    name: "browser_hover"
+    description: "鼠标悬停在元素或坐标上，停留指定时长。支持人类化移动。用于触发悬停菜单、查看 tooltip、触发延迟加载内容等场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        selector:
+          type: "string"
+          description: "要悬停的元素 CSS 选择器（selector 和坐标二选一）。"
+        x:
+          type: "number"
+          description: "悬停的 x 坐标（selector 和坐标二选一）。"
+        y:
+          type: "number"
+          description: "悬停的 y 坐标（selector 和坐标二选一）。"
+        duration_ms:
+          type: "integer"
+          default: 1000
+          description: "悬停持续时间（毫秒），默认 1000。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否使用人类化移动（贝塞尔曲线轨迹），默认 true。"
+      required: ["browser_id"]
+
+  browser_scroll:
+    level: 0
+    type: tool_call_agent
+    name: "browser_scroll"
+    description: "使用鼠标滚轮滚动页面或指定元素。支持平滑滚动模拟真实用户行为。可以滚动整个页面，也可以滚动指定元素（如滚动容器、iframe 等）。用于查看页面更多内容、触发懒加载、滚动到特定位置等场景。"
+    parameters:
+      type: "object"
+      properties:
+        browser_id:
+          type: "string"
+          description: "浏览器会话ID。"
+        delta_y:
+          type: "integer"
+          description: "垂直滚动距离（像素）。正数向下滚动，负数向上滚动。例如：500 向下滚动500像素，-300 向上滚动300像素。"
+        delta_x:
+          type: "integer"
+          default: 0
+          description: "水平滚动距离（像素），可选，默认 0。正数向右滚动，负数向左滚动。"
+        selector:
+          type: "string"
+          description: "要滚动的元素 CSS 选择器，可选。不指定则滚动整个页面。指定后会先移动鼠标到该元素，然后滚动该元素。"
+        smooth:
+          type: "boolean"
+          default: true
+          description: "是否平滑滚动（分多次小步滚动），默认 true。平滑滚动更像真实用户，但稍慢。"
+        human_like:
+          type: "boolean"
+          default: true
+          description: "是否先使用人类化移动鼠标到元素（仅在指定 selector 时有效），默认 true。"
+      required: ["browser_id", "delta_y"]
+
+  # ==================== 人类交互工具 ====================
+
+  human_in_loop:
+    level: 0
+    type: tool_call_agent
+    name: "human_in_loop"
+    description: "创建人类任务并等待完成。用于需要人工干预的场景（如上传文件、确认结果等）或者和用户进行交互。异步挂起，不阻塞服务器。"
+    parameters:
+      type: "object"
+      properties:
+        hil_id:
+          type: "string"
+          description: "人类任务的唯一ID，用于后续查询和完成任务。"
+        instruction:
+          type: "string"
+          description: "给人类的任务指令描述。"
+        # timeout:
+        #   type: "integer"
+        #   description: "超时时间（秒），不指定则无限等待。请都选择无限等待。"
+      required: ["hil_id", "instruction"]
+
+  # ==================== 代码执行工具 ====================
+
+  execute_code:
+    level: 0
+    type: tool_call_agent
+    name: "execute_code"
+    description: "在任务的隔离虚拟环境中执行 Python 代码。支持直接执行（阻塞等待结果）和后台执行（不阻塞，适合长时间运行的代码如Web服务器）。"
+    parameters:
+      type: "object"
+      properties:
+        # code:
+        #   type: "string"
+        #   description: "要执行的 Python 代码内容，可选。如果提供则直接执行此代码。"
+        file_path:
+          type: "string"
+          description: "要执行的代码文件相对路径（相对根目录），可选。code 和 file_path 至少提供一个。"
+        working_dir:
+          type: "string"
+          default: "code_run"
+          description: "代码执行时的工作目录，默认 'code_run'。"
+        use_venv:
+          type: "boolean"
+          default: true
+          description: "是否使用虚拟环境，默认 true。"
+        timeout:
+          type: "integer"
+          default: 30
+          description: "执行超时时间（秒），默认 30。后台执行时此参数无效。"
+        background:
+          type: "boolean"
+          default: false
+          description: "是否后台执行（不阻塞）。适合长时间运行的代码（如Web服务器）。后台执行时必须指定 output_file。"
+        output_file:
+          type: "string"
+          description: "输出重定向到文件的相对路径。后台执行时必需，直接执行时可选。"
+      required: ["file_path"]
+
+  pip_install:
+    level: 0
+    type: tool_call_agent
+    name: "pip_install"
+    description: "在任务的虚拟环境中安装一个或多个 Python 包。如果虚拟环境不存在会自动创建。"
+    parameters:
+      type: "object"
+      properties:
+        packages:
+          type: "array"
+          description: "要安装的 Python 包名列表，例如 ['numpy', 'pandas']。也可以是单个字符串。"
+          items:
+            type: "string"
+        timeout:
+          type: "integer"
+          default: 300
+          description: "安装超时时间（秒），默认 300。"
+      required: ["packages"]
+
+  execute_command:
+    level: 0
+    type: tool_call_agent
+    name: "execute_command"
+    description: "执行指定命令行命令,注意谨慎使用删除命令，可以用复制到.trash目录代替删除效果以便恢复"
+    parameters:
+      type: "object"
+      properties:
+        command:
+          type: "string"
+          description: "执行指定命令行命令,注意谨慎使用删除命令，可以用复制到.trash目录代替删除效果以便恢复"
+        working_dir:
+          type: "string"
+          default: "."
+          description: "命令执行的工作目录相对路径，默认为任务根目录。"
+        timeout:
+          type: "integer"
+          default: 30
+          description: "命令执行超时时间（秒），默认 30。"
+      required: ["command"]
+
+  grep:
+    level: 0
+    type: tool_call_agent
+    name: "grep"
+    description: "在文件中搜索匹配的文本模式（跨平台纯Python实现，支持正则表达式）。可以搜索指定目录或文件，支持递归搜索和文件类型过滤。"
+    parameters:
+      type: "object"
+      properties:
+        pattern:
+          type: "string"
+          description: "要搜索的正则表达式模式，例如 'def.*function' 或 'TODO'。"
+        search_path:
+          type: "string"
+          default: "."
+          description: "搜索路径相对路径，默认为当前工作区根目录。"
+        file_pattern:
+          type: "string"
+          default: "*"
+          description: "文件名匹配模式（支持通配符），如 '*.py'、'*.txt'、'*.md' 等。默认匹配所有文件。"
+        recursive:
+          type: "boolean"
+          default: true
+          description: "是否递归搜索子目录，默认 true。"
+        case_sensitive:
+          type: "boolean"
+          default: true
+          description: "是否大小写敏感，默认 true。"
+        show_line_number:
+          type: "boolean"
+          default: true
+          description: "是否显示行号，默认 true。"
+        max_results:
+          type: "integer"
+          default: 100
+          description: "最大结果数量，默认 100。"
+        context_lines:
+          type: "integer"
+          default: 0
+          description: "显示匹配行前后的上下文行数，默认 0（不显示上下文）。"
+      required: ["pattern"]
+
+  manage_code_process:
+    level: 0
+    type: tool_call_agent
+    name: "manage_code_process"
+    description: "管理后台执行的代码进程。可以查看当前 workspace 的所有后台进程，或终止指定的后台进程。配合 execute_code(background=True) 使用。"
+    parameters:
+      type: "object"
+      properties:
+        action:
+          type: "string"
+          enum: ["list", "kill"]
+          description: "操作类型：'list' 列出后台进程，'kill' 终止指定进程。"
+        process_id:
+          type: "string"
+          description: "要终止的进程ID（仅在 action='kill' 时需要）。从 list 操作的输出中获取。"
+      required: ["action"]
+
+  # ==================== 框架必需工具 ====================
+
+  final_output:
+    level: 0
+    type: tool_call_agent
+    name: "final_output"
+    description: "智能体输出最终结果的工具。当智能体完成任务或需要终止执行时调用此工具。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        status:
+          type: "string"
+          enum: ["success", "error"]
+          description: "任务执行状态：'success' 表示成功完成，'error' 表示执行失败。"
+        output:
+          type: "string"
+          description: "成功或失败的说明。如果输出包含文件，必须提供文件的相对路径和描述（不要重复文件中已有的内容），并包含 judge agent 的反馈。"
+        error_information:
+          type: "string"
+          description: "错误信息，仅在 status 为 'error' 时必需。"
+      required: ["task_id", "status", "output"]

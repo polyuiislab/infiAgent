@@ -1,4 +1,65 @@
 tools:
+  browser_execute_agent:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - browser_navigate
+      - browser_snapshot
+      # - browser_execute_js
+      - browser_new_page
+      - browser_switch_page
+      - browser_close_page
+      - browser_list_pages
+      - browser_click
+      - browser_type
+      - browser_wait
+      - browser_scroll
+      # - browser_mouse_move
+      # - browser_mouse_click_coords
+      # - browser_drag_and_drop
+      # - browser_hover
+      - file_read
+      - file_move
+      - dir_list
+      - dir_create
+      - file_write
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - human_in_loop
+      - vision_tool
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:    
+      agent_responsibility: |
+        你的职责是根据任务要求操作浏览器，实现任务目的。
+      agent_workflow: |
+        **你的流程:**
+        1. 先使用browser_snapshot，确保网页是已经开启状态（如果能执行成功证明已经打开了浏览器）。
+          如果不知道browser_id参数，则就是 temp/browser 文件夹下的对应文件名，使用 dir 或查看固话信息可以查到。或者思考区域会帮你记住。
+        2. 不要重复导航已经打开的网页。
+        在 temp/browser id下存放着浏览器当前活动页面的可交互元素列表文件，html源码，文本内容文件，和截图。
+        对于交互（每次交互前！！）：
+        每次交互前优先查看page_source.html查看可交互元素
+        对于内容获取：优先查看文本内容文件。content.md
+        当时上述信息都不足时，最后查看截图。你无法阅读截图，但是你可以使用vision_tool给予你提示，你应该给vision_tool足够的信息和目的和场景，保证其返回正确提示。
+        你应该基于这些文件，结合任务要求，操作浏览器，实现任务目的。
+        如果还带有截图需求，需要将 current.png 移动或复制到一个文件夹中，防止覆盖。
+        人机验证可以交给人类完成。
+    name: "browser_execute_agent"
+    description: "你的职责是操作浏览器完成任务"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的任务要求,browser_id（必须！）"
+      required: ["task_id", "task_input"]
+
   answer_from_papers:
     level: 1
     type: llm_call_agent
@@ -17,13 +78,13 @@ tools:
     model_type: claude-3-7-sonnet-20250219
     prompts:    
       agent_responsibility: |
-        你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等
+        你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等，允许阅读 pdf 内的图片。
       agent_workflow: |
         **你的流程:**
         原则！！：如果要回答多个文档的多个问题，你应该阅读一篇文章记录一次回答，一个任务多篇文章，增量式的记录在一个文件中！如果看到后续文档需要对前序回答做修改也可以。
         1. 你应该根据提供的论文地址，读取论文内容，并根据需求从文章中得到答案或分析或总结，如果有必要提供数学公式，应该使用 latex 风格。你应该输出一个 json 文件，文件名命名规则参考提示词！
     name: "answer_from_papers"
-    description: "你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等"
+    description: "你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等允许阅读 pdf 内的图片。"
     parameters:
       type: "object"
       properties:
@@ -401,6 +462,7 @@ tools:
       - reference_add
       - reference_delete
       - final_output
+      - browser_agent
     max_turns: 100
     model_type: claude-3-7-sonnet-20250219
     prompts:
@@ -419,6 +481,7 @@ tools:
         5. 如果是需要挂起执行的例如flask 网站任务，使用后台执行并定向输出文件。检查输出文件进行 debug。同时及时管理运行进程进行终止。
         6. 网站等视觉任务！一定要在挂起运行后指导人类进行审查！如果需要人类交互（例如让人类反馈网站页面结果或者进一步修改，这种视觉任务 judge agent 无法完成，请交给人类反馈），使用 human_in_loop 工具，并给出人类交互的提示词。
         7. 确定完成任务后，必须关闭所有遗留进程！
+        8. 简单的页面观察和截图任务也可以交给browser_agent
     name: "coding_task_agent"
     description: "根据详细的编码任务指示，准确完成编程要求，包括代码编写、测试和文档生成。"
     parameters:
@@ -580,6 +643,7 @@ tools:
         读图，并基于图片回答用户问题或者对于需求格式的文本输出。
       agent_workflow: |
         **你的流程:**
+        如果阅读材料不是图片（如 pdf)，请直接回复错误。
         1. 根据任务检查图片（单张或多张）是否存在。
         2. 使用vision_tool依次读图并输出答案或者描述信息
         3. 基于输出生成任务所需的图片的答案或者描述信息，保存在文本文件中，多个图片则可以增量输出在同一个回答文件中。
@@ -611,6 +675,7 @@ tools:
       - web_search
       - google_scholar_search
       - crawl_page
+      - vision_tool
       - answer_from_papers
       - reference_list
       - reference_add
@@ -624,6 +689,8 @@ tools:
       agent_workflow: |
         详细分析用户的意图，并根据意图编排使用你的工具完成任务。
         例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+        重要！！！：
+        学术写作禁止使用短段落，拒绝分点，使用自然的长短落进行叙述！
         **参考流程:**
         **重要！！**不要不基于已有材料乱编，特别是参考文献，应该使用阅读 answer_from_papers  或者 google_scholar_search 工具来获取参考文献。文章作者应该真实！！abstract，introduction，conclusion 部分一般没有子标题！注意遵守常见写作格式！！
         引用图片时应该仔细思考图片位置，如果在同层目录，则直接引用即可，不用带父文件夹名！！

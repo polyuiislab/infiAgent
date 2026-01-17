@@ -48,6 +48,28 @@ from .reference_tools import (
     ReferenceDeleteTool
 )
 
+from .powerpoint_tools import ImagesToPptTool
+
+from .browser_tools import (
+    BrowserLaunchTool,
+    BrowserCloseTool,
+    BrowserNewPageTool,
+    BrowserSwitchPageTool,
+    BrowserClosePageTool,
+    BrowserListPagesTool,
+    BrowserNavigateTool,
+    BrowserSnapshotTool,
+    BrowserExecuteJsTool,
+    BrowserClickTool,
+    BrowserTypeTool,
+    BrowserWaitTool,
+    BrowserMouseMoveTool,
+    BrowserMouseClickCoordsTool,
+    BrowserDragAndDropTool,
+    BrowserHoverTool,
+    BrowserScrollTool
+)
+
 __all__ = [
     "FileReadTool",
     "FileWriteTool",
@@ -77,5 +99,23 @@ __all__ = [
     "ReferenceListTool",
     "ReferenceAddTool",
     "ReferenceDeleteTool",
+    "ImagesToPptTool",
+    "BrowserLaunchTool",
+    "BrowserCloseTool",
+    "BrowserNewPageTool",
+    "BrowserSwitchPageTool",
+    "BrowserClosePageTool",
+    "BrowserListPagesTool",
+    "BrowserNavigateTool",
+    "BrowserSnapshotTool",
+    "BrowserExecuteJsTool",
+    "BrowserClickTool",
+    "BrowserTypeTool",
+    "BrowserWaitTool",
+    "BrowserMouseMoveTool",
+    "BrowserMouseClickCoordsTool",
+    "BrowserDragAndDropTool",
+    "BrowserHoverTool",
+    "BrowserScrollTool",
 ]
 

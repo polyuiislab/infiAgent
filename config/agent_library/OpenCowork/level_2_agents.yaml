@@ -1,0 +1,371 @@
+tools:
+  browser_agent:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - browser_execute_agent
+      - browser_launch
+      - browser_close
+      - judge_agent
+      - file_read
+      - dir_list
+      - dir_create
+      - answer_from_papers
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - human_in_loop
+      - file_move
+      - file_write
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        根据任务操作浏览器，实现任务目的。
+      agent_workflow: |
+        详细分析用户的意图。如果需要启动浏览器，使用browser_launch启动浏览器，并记录 id。
+        将任务和 id 交付给browser_execute_agent执行。
+        等待其返回结果后，使用browser_close关闭浏览器。
+        人机验证任务使用human_in_loop提示人类完成。
+        使用final_output向上报告完成情况。
+    name: "browser_agent"
+    description: "根据任务操作浏览器，实现任务目的。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的研究领域和文献收集要求，包括研究主题、关注重点、文献数量等需求。以及前序任务的文件结果信息（如有）。"
+      required: ["task_id", "task_input"]
+
+  data_collection_agent:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - get_data_from_arxiv
+      - get_data_from_google_scholar
+      - get_data_from_wiki
+      - get_data_from_web_search
+      # - get_figure_from_web
+      # - get_data_from_github
+      # - parse_document
+      # - web_search_agent
+      # - get_searchPdf_by_doi_or_title
+      - judge_agent
+      - file_read
+      - dir_list
+      - dir_create
+      - answer_from_papers
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - human_in_loop
+      - file_move
+      - file_write
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        根据任务场景收集数据，包括但不限于论文，网页资料。以及任何可以通过互联网访问获得的信息。
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+        **参考流程:**
+          1. 基于论文写作需求，从arxiv，google scholar上收集必要的论文标题，和原始文献。完成后注意检查 reference.bib文件是否更新。
+          2. 当所有内容都收集完成后，如果有些内容必须人类完成，且内容必要（例如 google scholar中的文章下载），则使用human_in_loop请求人类补充或完成。
+          3. 如果human_in_loop明确返回人类拒绝，则尽量尝试基于当前材料完成后续任务。
+        如果用户是其他目的而搜索资料，你应该自己判断是否无需收集论文，只需要收集网页资料。
+    name: "data_collection_agent"
+    description: "根据任务场景收集数据，包括但不限于论文，网页资料。以及任何可以通过互联网访问获得的信息。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的研究领域和文献收集要求，包括研究主题、关注重点、文献数量等需求。以及前序任务的文件结果信息（如有）。"
+      required: ["task_id", "task_input"]
+
+  data_analysis_agent:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - judge_agent
+      - file_read
+      - dir_list
+      - answer_from_papers
+      - vision_tool
+      - file_write
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是对文件空间内的资料（包括 pdf,图片，doc，纯文本，markdown 文件）进行分析，产生需求的结论，计划等各种产物,如实验计划，论文大纲等等。
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+        **你的流程:**
+        在开始下面流程前，注意与用户交互中用户的意见，如果用户有 idea 相关的意见，参考用户意见形成论文 idea。
+        idea+研究计划哲学：应该聚焦于一篇文章或者最多两三篇文章的方向上！研究问题针对一个点进行研究和改进！不是每一篇文章都对研究方案有用！目标单一，明确，可实现（要考虑 llm 模型的局限性,无法完成特别难的代码实验）是第一要务！
+        1. 对于每篇论文，你可以先通过 reference.bib查看大致方向。
+        2. 如果需要了解详细内容，或者需要更详细的总结，或特定信息，你可以通过answer_from_papers来阅读多篇文献（如果任务类似，你可以要求该工具一次性读取多篇论文，并生成到统一文件中查看）得到自己想要了解的或者知道的答案和内容。
+        3. 在你有信心基于已有文献做出最终计划后，做出实验计划，或写作计划。
+        4. 你的产出应该较为详细，例如论文的实验计划等，保证后续 agent 能直接使用你的产出而不用重新分析资料。
+        **注意事项:**
+        1. 你在要求工具总结论文前，应该自己先确认文章位置是否存在文章，找到文章真实存放的位置！
+        2. 重要：如果实验计划涉及外部资源。例如数据集，你应该详细说明对应数据集如何找到（依据论文），否则不应该写入到实验计划中！
+        3. 你不是编程 Agent!绝对不要自己尝试去编程！！
+    name: "data_analysis_agent"
+    description: "你的职责是对文件空间内的资料（包括 pdf,图片，doc，纯文本，markdown 文件）进行分析，产生需求的结论，计划等各种产物。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "相关资料的位置和分析需求产物"
+      required: ["task_id", "task_input"]
+
+  coder_agent:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - judge_agent
+      - file_read
+      - file_write
+      - dir_list
+      - dir_create
+      - coding_task_agent
+      - execute_command
+      - human_in_loop
+      - final_output
+      - browser_agent
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        完成各种复杂的编程任务！
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        你主要执行的是 python 代码项目的编写。
+        如果任务比较简单可以直接由你编写整个项目，如果任务比较复杂，请
+        0. 首先查看是否已经存在编程项目！是否可用，用户是否明确提出启用，不要覆盖或者重新找轮子。
+        1. 先编写整体项目架构保存于文件，明确各个模块的输入输出格式，测试方式和最终结构。
+        2. 调用coding_task_agent完成各项模块任务。
+        3. 调用execute_command进行测试。
+        注意事项：
+        1. 网站运行类的编程任务请在后台挂起运行并将输出重定向到文件。并且在输出前询问人类部署的端口号。
+        2. 网站等视觉任务！一定要在挂起运行后指导人类进行审查！如果需要人类交互（例如让人类反馈网站页面结果或者进一步修改，这种视觉任务 judge agent 无法完成，请交给人类反馈），使用 human_in_loop 工具，并给出人类交互的提示词。
+        3. 简单的页面观察和截图任务也可以交给browser_agent
+        4. 确定完成任务后，必须关闭所有遗留进程！
+    name: "coder_agent"
+    description: "完成各种编程任务！"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "实验计划的文件地址或详细实验要求。以及前序任务的文件结果信息（如有）。"
+      required: ["task_id", "task_input"]
+
+
+  material_to_document_agent:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - judge_agent
+      - material_to_ppt
+      - material_to_word
+      - material_to_tex
+      - file_read
+      - file_write
+      - sub_part_editor_agent
+      - dir_list
+      - dir_create
+      - file_move
+      - move_data_to_clean_directory
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是基于已经收集到的材料生成详细的 tex, word，ppt 等多媒体文档。
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+          **你的流程:**
+          无需使用复杂的文章格式（例如 IEEE）,避免表格或者图片超出页面等最后的排版错误问题！文章结构应该更具用户需求来定制，保证生成的文章看起来完整有逻辑！
+          0. 你将会得到之前的agent整理的所有图表的地址，包括相关的说明，还有之前进行 idea 生成的时候的所有相关文献。
+          1. 如果材料不在一个文件夹中，使用move_data_to_clean_directory工具将你写作所需的所有材料复制到一个干净的文件夹中
+          2. 有一个目录将会包含大部分资料除了少部分例如文献（但是文献也有可能已经在主要工作目录下，请你自己检查）等，你应该在拥有大部分相关材料的目录下工作，作为主要目录，不要自己创建新的目录！。并将散落的有用文件（特别是所有文章的pdf文件）移动到这个主要目录下，重复则无需移动。
+          3. 第一步，你应该根据大致的图的结果说明（通过读取相关文字材料），实验计划和idea内容，拟定一个标题和文章大纲。
+          4. 根据你拟定的标题和文章大概在指定工作目录下创建 main.tex文件和 bib 文件（先为空）。main.tex文件包含你拟定的大纲，切记所有写作都是使用英文。作者为polyu AI Researcher或者根据用户需求而定。大纲应该完全按照学术论文的标准进行，而且通过引入一些之后要写的 tex 文件来构造整个文件，例如 abstract.tex, introduction.tex, related_work.tex等等。
+          5. 每次完成sub_tex前，使用 dir_list工具和file_read工具观察文章所需要的章节，和已经完成的章节。调用sub_part_editor_agent工具完成剩下的 sub_tex，你应该有计划的完成例如 introduction 和 abstract 部分应该放在最后因为这两个要基于剩下的部分才能完成，告诉工具你要完成的部分，已经完成的部分，和文件夹中所有材料的地址，以及参考文献，并且你的大纲和思路。对于每个部分记得重点强调不同的要求，例如方法说明部分如果实验有代码，应该在该节包含伪代码，如果已经提供了框架图，也需要包含框架图这都是必须要明确要求的。
+          **注意事项:**
+          1. 重要：注意写作顺序，严格按照指令执行！不要自己完成所有写作，交给工具完成 sub_tex 的写作！！！！
+          2. 你应该告诉sub_part_editor_agent应该在什么位置生成tex 文件，防止文件地方出错！
+        如果是非学术类的协作任务，你可以直接根据输入要求撰写 md 文档或 tex 文件。
+    name: "material_to_document_agent"
+    description: "你的职责是基于已经收集到的材料生成详细的 tex, word，ppt 等多媒体文档。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "所有论文材料的位置信息，包括图表、实验数据、文献等。以及前序任务的文件结果信息（如有）。"
+        
+      required: ["task_id", "task_input"]
+
+
+  material_to_tex:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - judge_agent
+      - file_read
+      - file_write
+      - sub_part_editor_agent
+      - dir_list
+      - dir_create
+      - file_move
+      - move_data_to_clean_directory
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是基于已经收集到的材料生成详细的 tex文档。
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+          **你的流程:**
+          1. 使用 tex 编写文档/报告/论文。
+          2. 基于提供的材料，仔细构造文章内容，不要进行猜测和乱编。
+          3. 不同类型的文章风格不同：学术论文不要总是分点！避免小段落。
+          4. 正规文章类型尽量保证篇幅，例如你只写 main.tex，将各章节部分交给sub_part_editor_agent，注意规定写作风格和要求！例如学术论文：
+              文字要求；段落要求；字数要求等。
+    name: "material_to_tex"
+    description: "你的职责是基于已经收集到的材料生成详细的 tex 文件。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "所有论文材料的位置信息，包括图表、实验数据、文献等。以及前序任务的文件结果信息（如有）。"
+        
+      required: ["task_id", "task_input"]
+
+
+
+  material_to_ppt:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - judge_agent
+      - file_read
+      - file_write
+      - create_image
+      - dir_list
+      - dir_create
+      - file_move
+      - images_to_ppt
+      - final_output
+      - vision_tool
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是基于已经收集到的材料生成详细的 ppt 文件。
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+          **你的流程:**
+          基本流程：
+          0 查看是否存在 ppt 大纲或者需求
+          1. 使用 create_image 工具生成图片。
+          2. 使用 image_to_ppt 工具将图片转换为 ppt。
+          注意事项：
+          如果用户提供模板图片（可能为一张或者多张），必须使用vision_tool明确各图片的所有可替换区域，图片的模板属性（首页模板，内容页模板，分点模板，结束模板）。
+          如果用户提供模板图片，且你已经了解上面的内容，将不同模板图片作为图片引用发给create_image，要求其采用引用图片相同比例生成图片，并且提示词包含下面内容：
+            - 你在基于一个 ppt 模板生成 ppt 页面图片。
+            - 你必须保持和提供的模板图片完全一致的 ppt，不要对模板的不可替换区域做任务修改（背景，logo)
+            - 当前你在制作第x 页第二部分ppt。如果模板有页码或者分部模块，请同步修改。
+            - （内容布局实际内容进行调整，模板布局指的是背景，log，页码等模板类布局，内容区域可以自由发挥）
+            - 「你的其他内容提示词,图片必须就包含了所有内容！生成纯基于图的 ppt，因此文字内容也写在提示词中」
+          如果用户未提供模板图片，则使用 create_image 工具生成ppt，但是一旦生成第一页 ppt，后续 ppt 的作画工具应该引用第一页图片，并以此约束统一风格。提示词和模板提示词类似。
+    name: "material_to_ppt"
+    description: "你的职责是基于已经收集到的材料生成详细的 ppt 文件。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "所有论文材料的位置信息，包括图表、实验数据、文献等。以及前序任务的文件结果信息（如有）。"
+        
+      required: ["task_id", "task_input"]
+
+
+  material_to_doc:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - judge_agent
+      - file_read
+      - file_write
+      - create_image
+      - dir_list
+      - dir_create
+      - file_move
+      - final_output
+      - execute_command
+      - vision_tool
+    
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是基于已经收集到的材料生成详细的 doc 文件。
+      agent_workflow: |
+        基于 python 代码生成 doc 文件。
+    name: "material_to_doc"
+    description: "你的职责是基于已经收集到的材料生成详细的 doc 文件。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "所有论文材料的位置信息，包括图表、实验数据、文献等。以及前序任务的文件结果信息（如有）。"
+        
+      required: ["task_id", "task_input"]

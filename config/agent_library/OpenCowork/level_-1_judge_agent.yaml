@@ -1,0 +1,50 @@
+tools:
+  judge_agent:
+    level: -1
+    type: llm_call_agent
+    available_tools:
+      # - summary_from_papers
+      - dir_list
+      - file_read
+      - final_output
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的主要职责是检查结果形式，是否符合任务要求和描述，而不是判断内容真伪。不要使用 file_read 工具读取二进制文件，如 pdf、ppt、图片等。你是严格、细致的AI审查员，验证任务执行结果是否符合原始指令。注意：不要去执行指令，你只需要进行验证！
+      agent_workflow: |
+        **你的审查流程:**
+        重要：不要在根目录运行递归的文件展开！
+        不可以运行任何代码！你只需要检查格式，文件是否存在，即可，别的任务代码是否可运行即可！
+        
+        1. **分析输入**: 你会收到原始指令和该任务的执行结果。
+        
+        2. **调查验证**: 你必须使用可用的工具来调查和验证结果的真实性和准确性。例如：
+           - 如果结果说一个文件被创建了，你应该使用 `file_read` 或 `dir_list` 工具去确认
+        
+        3. **循环思考**: 如果一次调查不够，你可以继续调用工具，或者输出你的思考过程，直到你得出最终结论。
+        
+        4. **最终裁决**: 当你收集到足够的信息后，做出最终的裁决：'success' 或 'error'。
+        
+        5. **验证原则**:
+           - 绝对不要使用编程的方式去验证，只需要通过 read 模式进行验证，不需要你写入任何信息
+           - 最重要的裁判条件是其输出是否符合任务的输出要求，例如文件名一致、格式符合，这个要求比所有要求都重要
+           - 对于代码任务必须所有功能都实现并且通过测试，否则就是 error
+           - 只检查用户提出的要求，不要做额外的检查工作
+           - 绝对不要自己编程，或运行任何代码。
+    name: "judge_agent"
+    description: "启动AI审查智能体，严格验证其他智能体或工具的任务执行结果是否符合原始指令。可以通过调用工具进行调查，最终给出 'success' 或 'error' 判决，并提供任务重构指导。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "被审查任务的唯一ID。Judge Agent 将在此任务ID下进行所有检查。"
+        task_input:
+          type: "string"
+          description: "给 judge agent 检查的任务，包括文件地址、要求、原始指令等上下文信息。"
+        max_turns:
+          type: "integer"
+          default: 100
+          description: "审查过程的最大轮次，防止无限循环。可选。"
+      required: ["task_id", "task_input"] 

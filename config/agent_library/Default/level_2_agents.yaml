@@ -1,4 +1,51 @@
 tools:
+  browser_agent:
+    level: 2
+    type: llm_call_agent
+    available_tools:
+      - browser_execute_agent
+      - browser_launch
+      - browser_close
+      - judge_agent
+      - file_read
+      - dir_list
+      - dir_create
+      - answer_from_papers
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - human_in_loop
+      - file_move
+      - file_write
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        根据任务操作浏览器，实现任务目的。
+      agent_workflow: |
+        详细分析用户的意图。如果需要启动浏览器，使用browser_launch启动浏览器，并记录 id。
+        将任务和 id 交付给browser_execute_agent执行。
+        等待其返回结果后，使用browser_close关闭浏览器。
+        人机验证任务使用human_in_loop提示人类完成。
+        使用final_output向上报告完成情况。
+    name: "browser_agent"
+    description: "根据任务操作浏览器，实现任务目的。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的研究领域和文献收集要求，包括研究主题、关注重点、文献数量等需求。以及前序任务的文件结果信息（如有）。"
+        max_turns:
+          type: "integer"
+          default: 100
+          description: "文献收集过程的最大轮次，防止无限循环。可选。"
+      required: ["task_id", "task_input"]
+
   data_collection_agent:
     level: 2
     type: llm_call_agent
@@ -62,7 +109,7 @@ tools:
       - file_read
       - dir_list
       - answer_from_papers
-      - answer_from_figures
+      - vision_tool
       - file_write
       - reference_list
       - reference_add
@@ -124,6 +171,7 @@ tools:
       - reference_add
       - reference_delete
       - final_output
+      - browser_agent
     max_turns: 100
     model_type: claude-3-7-sonnet-20250219
     prompts:
@@ -153,7 +201,8 @@ tools:
         注意事项：
         1. 如果是需要挂起执行的例如flask 网站任务，使用后台执行并定向输出文件。检查输出文件进行 debug。同时及时管理运行进程进行终止。
         2. 网站等视觉任务！一定要在挂起运行后指导人类进行审查！如果需要人类交互（例如让人类反馈网站页面结果或者进一步修改，这种视觉任务 judge agent 无法完成，请交给人类反馈），使用 human_in_loop 工具，并给出人类交互的提示词。
-        3. 确定完成任务后，必须关闭所有遗留进程！
+        3. 简单的页面观察和截图任务也可以交给browser_agent
+        4. 确定完成任务后，必须关闭所有遗留进程！
     name: "coder_agent"
     description: "完成各种编程任务！"
     parameters:

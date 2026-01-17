@@ -1,0 +1,715 @@
+tools:
+  browser_execute_agent:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - browser_navigate
+      - browser_snapshot
+      # - browser_execute_js
+      - browser_new_page
+      - browser_switch_page
+      - browser_close_page
+      - browser_list_pages
+      - browser_click
+      - browser_type
+      - browser_wait
+      - browser_scroll
+      # - browser_mouse_move
+      # - browser_mouse_click_coords
+      # - browser_drag_and_drop
+      # - browser_hover
+      - file_read
+      - file_move
+      - dir_list
+      - dir_create
+      - file_write
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - human_in_loop
+      - vision_tool
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:    
+      agent_responsibility: |
+        你的职责是根据任务要求操作浏览器，实现任务目的。
+      agent_workflow: |
+        **你的流程:**
+        1. 先使用browser_snapshot，确保网页是已经开启状态（如果能执行成功证明已经打开了浏览器）。
+          如果不知道browser_id参数，则就是 temp/browser 文件夹下的对应文件名，使用 dir 或查看固话信息可以查到。或者思考区域会帮你记住。
+        2. 不要重复导航已经打开的网页。
+        在 temp/browser id下存放着浏览器当前活动页面的可交互元素列表文件，html源码，文本内容文件，和截图。
+        对于交互（每次交互前！！）：
+        每次交互前优先查看page_source.html查看可交互元素
+        对于内容获取：优先查看文本内容文件。content.md
+        当时上述信息都不足时，最后查看截图。你无法阅读截图，但是你可以使用vision_tool给予你提示，你应该给vision_tool足够的信息和目的和场景，保证其返回正确提示。
+        你应该基于这些文件，结合任务要求，操作浏览器，实现任务目的。
+        如果还带有截图需求，需要将 current.png 移动或复制到一个文件夹中，防止覆盖。
+        人机验证可以交给人类完成。
+    name: "browser_execute_agent"
+    description: "你的职责是操作浏览器完成任务"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的任务要求,browser_id（必须！）"
+      required: ["task_id", "task_input"]
+
+  answer_from_papers:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - parse_document
+      - file_read
+      - dir_list
+      - dir_create
+      - file_write
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - vision_tool
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:    
+      agent_responsibility: |
+        你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等，允许阅读 pdf 内的图片。
+      agent_workflow: |
+        **你的流程:**
+        原则！！：如果要回答多个文档的多个问题，你应该阅读一篇文章记录一次回答，一个任务多篇文章，增量式的记录在一个文件中！如果看到后续文档需要对前序回答做修改也可以。
+        1. 你应该根据提供的论文地址，读取论文内容，并根据需求从文章中得到答案或分析或总结，如果有必要提供数学公式，应该使用 latex 风格。你应该输出一个 json 文件，文件名命名规则参考提示词！
+    name: "answer_from_papers"
+    description: "你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等允许阅读 pdf 内的图片。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的任务要求，应该提供一篇或多篇文章的地址，不要提供原文内容。并且提供具体的问题和你预期想要获得的答案形式或总结要点或分析方向等。"
+        
+      required: ["task_id", "task_input"]
+
+#https://en.wikipedia.org/wiki/keyword
+  get_data_from_wiki:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - file_read
+      - crawl_page
+      - file_write
+      - dir_list
+      - dir_create
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        收集维基百科中的词条内容，记录需要使用的关键信息，一般用于查明事实信息。
+      agent_workflow: |
+        **参考流程:**
+          1. 更具任务所需的搜索内容，拟定词条关键词，或基于任务制定的搜索词条。
+          2. 使用crawl_page基于https://en.wikipedia.org/wiki/keyword 和 https://zh.wikipedia.org/wiki/关键词 搜索内容。
+          3. 如果中英文都不存在，则放弃该关键词，并在 final_out中报告
+          4. 如果存在关键词，且符合需求，则更新（append） reference.bib，重复操作完成所有关键词搜索。
+    name: "get_data_from_wiki"
+    description: "收集维基百科中的词条内容，记录需要使用的关键信息，一般用于查明事实信息。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的搜索任务要求，可以是笼统的某一方面，或具体的关键词组"
+
+      required: ["task_id", "task_input"] 
+
+  get_data_from_google_scholar:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - google_scholar_search
+      - file_read
+      - crawl_page
+      - file_write
+      - dir_list
+      - dir_create
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - answer_from_papers
+      - file_download
+      - human_in_loop
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        收集谷歌学术中的论文标题，doi，摘要，作者，出版年份，引用次数等信息。
+      agent_workflow: |
+        **参考流程:**
+          attention:pdf文件应该使用 file_download 下载.
+          1.基于你的需求搜索谷歌学术的信息。如需详细信息，可以使用crawl_page获取详细信息，如果无返回内容，证明该篇文章网络人机验证，则只使用搜索信息即可。
+          2.如果有有效信息且符合需求，及时记录在 reference.bib 中。
+          3.如果需求明确要用到文章原文，在收集所有所需文章列表后，使用human_in_loop请求人类下载原文到文件空间。
+    name: "get_data_from_google_scholar"
+    description: "收集谷歌学术中的论文标题，doi，摘要，作者，出版年份，引用次数等信息"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的搜索任务要求，包括论文主题、关键词、数量要求等。"
+
+      required: ["task_id", "task_input"] 
+
+
+  get_data_from_arxiv:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - web_search
+      - answer_from_papers
+      - google_scholar_search
+      - arxiv_search
+      - file_read
+      - crawl_page
+      - file_write
+      - dir_list
+      - dir_create
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - file_download
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        收集arxiv 中的论文，并下载相关文献。
+      agent_workflow: |
+        **参考流程:**
+          1. 使用arxiv_search搜索拟定或给定的关键词。
+          2. 分析结果，保留符合需求的文献信息，增量更新（append）到 reference.bib中。
+          3. 使用 file_download 下载文献到对应文件夹（如 papers,如果没有此类专门的文件夹则自己新建一个）。
+    name: "get_data_from_arxiv"
+    description: "收集arxiv 中的论文，并下载相关文献。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的搜索任务要求，包括论文主题、关键词、数量要求等。"
+
+      required: ["task_id", "task_input"] 
+
+  get_data_from_web_search:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - web_search
+      - file_read
+      - crawl_page
+      - file_write
+      - dir_list
+      - dir_create
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+      - file_download
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        基于搜索引擎搜索公开资料
+      agent_workflow: |
+        **参考流程:**
+          1.分析任务，拟定或使用给定的关键词进行搜索引擎搜索。
+          2.对于需要深度探索的任务，使用crawl_page进行深度探索。
+          3.一旦找到所需信息，更新 reference.bib文件。
+    name: "get_data_from_web_search"
+    description: "基于搜索引擎搜索公开资料"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "具体的搜索任务要求，包括论文主题、关键词、数量要求等。"
+
+      required: ["task_id", "task_input"] 
+
+
+  # web_search_agent:
+  #   level: 1
+  #   type: llm_call_agent
+  #   available_tools:
+  #     - web_search
+  #     - google_scholar_search
+  #     - arxiv_search
+  #     - file_read
+  #     - crawl_page
+  #     - file_write
+  #     - dir_list
+  #     - dir_create
+  #     - final_output
+  #   max_turns: 100
+  #   model_type: claude-3-7-sonnet-20250219
+  #   prompts:
+  #     agent_responsibility: |
+  #       收集任务所需数据，并记录在 md 文件中
+  #     agent_workflow: |
+  #       详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+  #       例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+  #       **参考流程:**
+  #         重要！！！：你搜索到的任何有用的结果都应该说明起来源，方便后期写作的引用，论文流程如下，但是其他网络来源也应该记录！例如维基百科，新闻等（提供标题，source_url, 作者，文献类型（web））
+  #         1. 优先使用arxiv_search然后是google_scholar_search进行文献搜索，不应该盲目进行搜索，要确保搜素条件尽可能找到所需的论文列表。
+  #         2. 你应该之后通过读取文件的方式读取搜索结果，查看是否有满足要求的论文并记录，你可以在最终输出中输出论文的标题或者doi，如有 pdf 原文下载地址也必须记录，注意不要将结果生成文本传递，而是保存在 selected_paper_result.md文件（如果不是文献收集目的，请你自定义文件名）中。
+  #         3. 如果搜索结果中有可能满足要求的论文，但是你不确定或者无法读取其 doi 或者完整标题，你应该用打开指定 url 的工具打开搜索列表中对应的 url。同样在之后读取 md 文件获取相关知识。
+  #       如果是非学术任务，你可能需要调用web_search在搜索引擎中进行搜索，任然将最后结果保存在 md 文件中
+  #   name: "web_search_agent"
+  #   description: "根据任务搜索论文，并返回任务所需论文的完整标题或者doi，或者搜索网页内容返回md 文档或者相关答案和数据源。"
+  #   parameters:
+  #     type: "object"
+  #     properties:
+  #       task_id:
+  #         type: "string"
+  #         description: "任务的唯一ID。"
+  #       task_input:
+  #         type: "string"
+  #         description: "具体的搜索任务要求，包括论文主题、关键词、数量要求等。"
+  #       max_turns:
+  #         type: "integer"
+  #         default: 100
+  #         description: "搜索过程的最大轮次，防止无限循环。可选。"
+  #     required: ["task_id", "task_input"] 
+
+
+  # get_searchPdf_by_doi_or_title:
+  #   level: 1
+  #   type: llm_call_agent
+  #   available_tools:
+  #     - file_read
+  #     - human_in_loop
+  #     - file_write
+  #     - dir_list
+  #     - dir_create
+  #     - final_output
+  #     - file_download
+  #   max_turns: 100
+  #   model_type: claude-3-7-sonnet-20250219
+  #   prompts:
+  #     agent_responsibility: |
+  #       下载指定材料到upload文件夹中
+  #     agent_workflow: |
+  #       **你的流程:**
+  #       1. 收到一篇或多篇文献名称和 doi或者相关信息。
+  #       2. 如果有下载地址提供，则使用file_download下载到 upload 文件夹中，如果工具调用失败，或者没有下载地址则转到第三步。
+  #       3. 使用人类交互工具向用户发送请求，描述将什么类型的文件下载，然后命名为什么名称最后，上传到 upload 文件夹。
+  #       4. 观察用户是否上传成功，如果成功则进入最终审查输出阶段，否则请求用户再次帮助。 文件名称无需完全和你要求的服务。
+  #   name: "get_searchPdf_by_doi_or_title"
+  #   description: "下载指定材料到upload文件夹中"
+  #   parameters:
+  #     type: "object"
+  #     properties:
+  #       task_id:
+  #         type: "string"
+  #         description: "任务的唯一ID。"
+  #       task_input:
+  #         type: "string"
+  #         description: "具体的要下载文献的文献名和其他一些有助于找到文献的信息"
+  #       max_turns:
+  #         type: "integer"
+  #         default: 100
+  #         description: "搜索过程的最大轮次，防止无限循环。可选。"
+  #     required: ["task_id", "task_input"] 
+
+  # summary_from_one_paper:
+  #   level: 1
+  #   type: llm_call_agent
+  #   available_tools:
+  #     - parse_document
+  #     - file_read
+  #     - dir_list
+  #     - dir_create
+  #     - file_write
+  #     - final_output
+  #   max_turns: 100
+  #   model_type: claude-3-7-sonnet-20250219
+  #   prompts:
+  #     agent_responsibility: |
+  #       你的职责是提炼一篇文章内容,格式可以是word 文档或者 pdf 文档
+  #     agent_workflow: |
+  #       **你的流程:**
+  #       1. 你应该根据提供的论文地址，读取论文内容，然后将文章分成几个部分，比如 introduction，abstract 等，对每个部分进行summary，主要说明这部分做了什么，结果等。你应该输出一个 json 文件。文件命名尽量包含你总结的文件名。
+  #       2. 创建文件前应该检查创建文件的地址下有无其他同名文件，不要覆盖不是自己的文件。
+  #   name: "summary_from_one_paper"
+  #   description: "根据提供的论文地址，读取论文内容并提炼总结，将文章分成不同部分进行summary，输出为json文件。"
+  #   parameters:
+  #     type: "object"
+  #     properties:
+  #       task_id:
+  #         type: "string"
+  #         description: "任务的唯一ID。"
+  #       task_input:
+  #         type: "string"
+  #         description: "具体的任务要求，应该提供一篇文章的地址，不要提供原文内容。"
+  #       max_turns:
+  #         type: "integer"
+  #         default: 100
+  #         description: "处理过程的最大轮次，防止无限循环。可选。"
+  #     required: ["task_id", "task_input"] 
+
+
+  coding_task_agent:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      #- judge_agent
+      - file_read
+      - file_write
+      - dir_list
+      - dir_create
+      - execute_command
+      - file_replace_lines
+      - human_in_loop
+      - final_output
+      - browser_agent
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是根据一个详细的编码任务指示准确无误的完成要求。
+      agent_workflow: |
+        详细分析任务，基于给你的材料完成对应的编程任务
+        1. 一般来说你可能已经在一个项目中，不要重复找轮子。
+        2. 了解你这个模块可能要用到的其他代码文件，和可能涉及的其他代码文件，明确你要写的代码。
+        3. 基于充足上下文完成编程任务。
+        4. 对你的模块进行测试，确保你的任务完美完成。
+        注意事项：
+        1. 网站运行类的编程任务请在后台挂起运行并将输出重定向到文件。并且在输出前询问人类部署的端口号。
+        2. 网站等视觉任务！一定要在挂起运行后指导人类进行审查！如果需要人类交互（例如让人类反馈网站页面结果或者进一步修改，这种视觉任务 judge agent 无法完成，请交给人类反馈），使用 human_in_loop 工具，并给出人类交互的提示词。
+        3. 简单的页面观察和截图任务也可以交给browser_agent
+        4. 确定完成任务后，必须关闭所有遗留进程！
+    name: "coding_task_agent"
+    description: "根据详细的编码任务指示，准确完成编程要求，包括代码编写、测试和文档生成。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "详细的编码任务指示和要求。"
+
+      required: ["task_id", "task_input"] 
+
+  move_data_to_clean_directory:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      #dge_agent
+      - dir_list
+      - dir_create
+      - file_move
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        你的职责是将用户要求的各种文件移动到用户指定的文件夹中。
+      agent_workflow: |
+        **你的流程:**
+        1. 你将会得到之前的 agent或者用户给你提供的实验代码和生成结果的文件位置，或需要你根据其提示信息自己寻找，一般在，你首先应该确保文件存在。否则进行最终输出并给出错误信息。
+        2. 你的总体流程应该是将所有文件成功的移动到对应位置。注意原位置的文件不要删除，使用拷贝的形式移动过去，不要删除原位置的文件。你可以一次性移动多个文件。
+        **注意事项:**
+        1. 重要：你不是编程 ai，不要进行编程。
+    name: "move_data_to_clean_directory"
+    description: "将用户要求的各种文件移动到指定文件夹中，使用拷贝方式保留原文件。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "文件移动的具体要求，包括源文件位置和目标文件夹。"
+
+      required: ["task_id", "task_input"] 
+
+
+  create_figures_by_ai:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - file_read
+      - create_image
+      - file_write
+      - dir_list
+      - dir_create
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        根据用户文字需求生成图片
+      agent_workflow: |
+        **你的流程:**
+        1. 收到详细作图的提示词。
+        2. 使用create_image在任务制定或者自己创建的文件夹（如果已有类似文件夹则不用创建），生成对应图片。
+    name: "create_figures_by_ai"
+    description: "根据用户文字需求生成图片"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "生成图片的提示词"
+
+      required: ["task_id", "task_input"] 
+
+
+
+  answer_from_figures:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - file_read
+      - vision_tool
+      - file_write
+      - dir_list
+      - dir_create
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        读图，并基于图片回答用户问题或者对于需求格式的文本输出。
+      agent_workflow: |
+        **你的流程:**
+        如果阅读材料不是图片（如 pdf)，请直接回复错误。
+        1. 根据任务检查图片（单张或多张）是否存在。
+        2. 使用vision_tool依次读图并输出答案或者描述信息
+        3. 基于输出生成任务所需的图片的答案或者描述信息，保存在文本文件中，多个图片则可以增量输出在同一个回答文件中。
+    name: "answer_from_figures"
+    description: "读图，并基于图片回答用户问题或者对于需求格式的文本输出。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "要读的图片地址，你的需求，问题和格式"
+
+      required: ["task_id", "task_input"] 
+
+  sub_part_editor_agent:
+    level: 1
+    type: llm_call_agent
+    available_tools:
+      - dir_list
+      - dir_create
+      - file_read
+      - file_write
+      - web_search
+      - google_scholar_search
+      - crawl_page
+      - vision_tool
+      - answer_from_papers
+      - reference_list
+      - reference_add
+      - reference_delete
+      - final_output
+    max_turns: 100
+    model_type: claude-3-7-sonnet-20250219
+    prompts:
+      agent_responsibility: |
+        写指定部分的 tex 文件，如写introduction 部分introduction.tex，或者写conclusion 部分conclusion.tex
+      agent_workflow: |
+        详细分析用户的意图，并根据意图编排使用你的工具完成任务。
+        例如，如果用户想要进行学术论文写作，则你应该参考下面的流程：
+        **参考流程:**
+        **重要！！**不要不基于已有材料乱编，特别是参考文献，应该使用阅读 answer_from_papers  或者 google_scholar_search 工具来获取参考文献。文章作者应该真实！！abstract，introduction，conclusion 部分一般没有子标题！注意遵守常见写作格式！！
+        引用图片时应该仔细思考图片位置，如果在同层目录，则直接引用即可，不用带父文件夹名！！
+        1. 你会获得你的任务部分，已经已经完成的其他部分，还有相关材料，例如实验数据，图表，图的说明等。你只能读取文本数据，但是你应该尽可能通过文本数据了解所有材料。(注意 main.tex的引用 sub_tex文件的方法，不要重复添加标题)
+        2. 你将根据材料撰写指定部分，但是在撰写 introduction和 related work/review 部分时，一般来说材料不足，你应该通过谷歌搜索，谷歌学术搜素，和网页打开工具来获取更多的参考文献（如果不用下载就可以用来作为参考文献就尽量不要下载，浏览网页即可），记得及时更新 bib 文件，如果没有则新建， 有的话就在已有基础上更新。当然你也可以引用 参考文献pdf 中的参考文献作为自己的参考文献，注意不要乱编参考文献！如果查询到的参考文献只有标题，或者部分作者，那么引用时候就不要编造作者，可以写你查询到的部分。
+        3. 根据要求撰写对应部分的内容，要求和已经存在的其他 tex 不冲突，语言要有顶级期刊的学术风格，清晰但不废话。
+        **注意事项:**
+        1. 重要：内容不要太短，尽可能像学术期刊论文看齐。
+        2. 重要：related work 时必须使用联网功能添加新的参考文献！现在时间是 2025-07-26！不要使用太多太老的文献！找到新文献以后一定一定一定要及时更新到 bib 文件中去
+        3. 重要：introduction 和conclusion 部分不需要子标题！
+    name: "sub_part_editor_agent"
+    description: "撰写学术论文的指定章节tex文件，支持联网搜索参考文献并更新bib文件。"
+    parameters:
+      type: "object"
+      properties:
+        task_id:
+          type: "string"
+          description: "任务的唯一ID。"
+        task_input:
+          type: "string"
+          description: "要撰写的章节部分、已完成的其他部分信息、相关材料位置等。"
+
+      required: ["task_id", "task_input"] 
+
+  # md_to_document_agent:
+  #   level: 1
+  #   type: llm_call_agent
+  #   available_tools:
+  #     - final_output
+  #     - dir_list
+  #     - dir_create
+  #     - file_read
+  #     - file_write
+  #     - md_to_pdf
+  #     - md_to_docx
+  #     - execute_command
+  #   max_turns: 100
+  #   model_type: claude-3-7-sonnet-20250219
+  #   prompts:
+  #     agent_responsibility: |
+  #       你的职责是将 md 或者 tex 文件转化为 pdf 文件或者 word。
+  #     agent_workflow: |
+  #       **你的流程:**
+  #         1.如果只提供了 tex 文件，你应该分析所有 tex 文件结构，并将其转化整合为一个单独的md文件。
+  #           写入逻辑：
+  #             a.按照 tex 的结构进行写入，例如先将main.tex内容改写到 md 中，包括替换位置。
+  #             b. 然后将bib 的参考文献写入到 md 中
+  #             c. 最后使用 file_write的行替换功能，将 subtex 的内容分次写入到 md 中，每次完成后应该重新使用 file_read的行号显示功能查看md 文件的内容，确定下次要替换的行号。注意引用部分的重写
+  #             d. 进入下一步
+  #         2.将要转化的md文件中的内容修改成下面格式（无需完全一致，但是需要符合 pandoc 风格）：
+  #           ```markdown
+  #             title: "在此填写论文标题"
+  #             subtitle: "在此填写副标题（可选）"
+  #             author: 
+  #               - "第一作者姓名^1^"
+  #               - "第二作者姓名^2^"
+  #             institute:
+  #               - "^1^第一作者单位，院系，城市，邮编"
+  #               - "^2^第二作者单位，院系，城市，邮编"
+  #             date: "2025年10月19日"
+  #             abstract: "这里填写论文摘要，通常 200-300 字，简要概述研究背景、方法、结果和结论。"
+  #             keywords: "关键词1; 关键词2; 关键词3; 关键词4; 关键词5"
+
+  #             # PDF 格式设置
+  #             documentclass: article
+  #             papersize: a4
+  #             geometry: "left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm"
+  #             fontsize: 12pt
+  #             linestretch: 1.5
+
+  #             # 中文支持
+  #             CJKmainfont: "AR PL UMing CN"
+  #             CJKsansfont: "WenQuanYi Micro Hei"
+  #             CJKmonofont: "WenQuanYi Micro Hei Mono"
+
+  #             # 目录设置
+  #             toc: true
+  #             toc-depth: 3
+  #             numbersections: true
+
+  #             # 链接颜色
+  #             colorlinks: true
+  #             linkcolor: blue
+  #             urlcolor: blue
+  #             citecolor: blue
+
+  #             # 页眉页脚
+  #             header-includes: |
+  #               \usepackage{xeCJK}
+  #               \usepackage{fancyhdr}
+  #               \pagestyle{fancy}
+  #               \fancyhead[L]{在此填写页眉左侧文字}
+  #               \fancyhead[C]{}
+  #               \fancyhead[R]{\thepage}
+  #               \fancyfoot[C]{}
+  #               \usepackage{graphicx}
+  #               \usepackage{float}
+  #               \floatplacement{figure}{H}
+  #               \usepackage{amsmath}
+  #               \usepackage{amssymb}
+  #             ---
+
+  #             \newpage
+
+  #             # 一节标题
+
+  #             内容
+
+  #             ## 二级标题
+
+  #             详细描述研究背景...
+
+              
+  #             ::: {#refs}
+  #             :::
+
+  #             **注：** 使用 BibTeX 格式的参考文献，或手动列出：
+
+  #             [1] 作者1, 作者2. 论文标题[J]. 期刊名称, 年份, 卷(期): 页码.
+
+  #             [2] Author A, Author B. Paper Title[C]//Conference Name. Year: pages.
+
+  #             [3] 作者. 书名[M]. 出版地: 出版社, 年份: 页码.
+
+  #             \newpage
+
+  #           ```
+          
+  #         3. 重构后直接调用编译工具，尝试转换为 pdf或word。
+  #         4. 检查文件夹下是否成功生成 pdf 文件 或 word 文件。
+  #       **注意事项:**
+  #       1. 重要：main.tex引用和你读取文件的地址是不一样的，是相对的！main.tex引用的文件应该相对自己所在文件夹！
+  #   name: "md_to_document_agent"
+  #   description: "你的职责是将 md 或者 tex 文件转化为 pdf 文件或者 word。"
+  #   parameters:
+  #     type: "object"
+  #     properties:
+  #       task_id:
+  #         type: "string"
+  #         description: "任务的唯一ID。"
+  #       task_input:
+  #         type: "string"
+  #         description: "要转换的 md 文件，是否需要准信某些格式和额外要求"
+  #       max_turns:
+  #         type: "integer"
+  #         default: 100
+  #         description: "编译修复过程的最大轮次，防止无限循环。可选。"
+  #     required: ["task_id", "task_input"]

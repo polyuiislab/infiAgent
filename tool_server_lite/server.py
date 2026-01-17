@@ -58,7 +58,25 @@ from tools import (
     CodeProcessManagerTool,
     ReferenceListTool,
     ReferenceAddTool,
-    ReferenceDeleteTool
+    ReferenceDeleteTool,
+    ImagesToPptTool,
+    BrowserLaunchTool,
+    BrowserCloseTool,
+    BrowserNewPageTool,
+    BrowserSwitchPageTool,
+    BrowserClosePageTool,
+    BrowserListPagesTool,
+    BrowserNavigateTool,
+    BrowserSnapshotTool,
+    BrowserExecuteJsTool,
+    BrowserClickTool,
+    BrowserTypeTool,
+    BrowserWaitTool,
+    BrowserMouseMoveTool,
+    BrowserMouseClickCoordsTool,
+    BrowserDragAndDropTool,
+    BrowserHoverTool,
+    BrowserScrollTool
 )
 from tools.human_tools import (
     get_hil_status, respond_hil_task, list_hil_tasks, get_hil_task_for_workspace,
@@ -102,6 +120,24 @@ TOOLS = {
     "reference_list": ReferenceListTool(),
     "reference_add": ReferenceAddTool(),
     "reference_delete": ReferenceDeleteTool(),
+    "images_to_ppt": ImagesToPptTool(),
+    "browser_launch": BrowserLaunchTool(),
+    "browser_close": BrowserCloseTool(),
+    "browser_new_page": BrowserNewPageTool(),
+    "browser_switch_page": BrowserSwitchPageTool(),
+    "browser_close_page": BrowserClosePageTool(),
+    "browser_list_pages": BrowserListPagesTool(),
+    "browser_navigate": BrowserNavigateTool(),
+    "browser_snapshot": BrowserSnapshotTool(),
+    "browser_execute_js": BrowserExecuteJsTool(),
+    "browser_click": BrowserClickTool(),
+    "browser_type": BrowserTypeTool(),
+    "browser_wait": BrowserWaitTool(),
+    "browser_mouse_move": BrowserMouseMoveTool(),
+    "browser_mouse_click_coords": BrowserMouseClickCoordsTool(),
+    "browser_drag_and_drop": BrowserDragAndDropTool(),
+    "browser_hover": BrowserHoverTool(),
+    "browser_scroll": BrowserScrollTool(),
 }
 
 
@@ -199,22 +235,22 @@ async def create_task(request: TaskCreateRequest = None, task_id: str = None, ta
             workspace.mkdir(parents=True, exist_ok=True)
         
         # 创建必要的子文件夹
-        (workspace / "temp").mkdir(exist_ok=True)
-        (workspace / "code_run").mkdir(exist_ok=True)
-        (workspace / "code_env").mkdir(exist_ok=True)
+        # (workspace / "temp").mkdir(exist_ok=True)
+        # (workspace / "code_run").mkdir(exist_ok=True)
+        # (workspace / "code_env").mkdir(exist_ok=True)
         
-        # 创建默认的 reference.bib 文件（如果不存在）
-        reference_bib = workspace / "reference.bib"
-        if not reference_bib.exists():
-            reference_bib.write_text("", encoding='utf-8')
+        # # 创建默认的 reference.bib 文件（如果不存在）
+        # reference_bib = workspace / "reference.bib"
+        # if not reference_bib.exists():
+        #     reference_bib.write_text("", encoding='utf-8')
         
         return {
             "success": True,
             "message": f"Task workspace ready: {workspace}",
             "data": {
                 "workspace": str(workspace),
-                "created_folders": ["temp", "code_run", "code_env"],
-                "created_files": ["reference.bib"]
+                # "created_folders": ["temp", "code_run", "code_env"],
+                # "created_files": ["reference.bib"]
             }
         }
     except Exception as e:
