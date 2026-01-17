@@ -47,7 +47,8 @@ If you pulled the image or code before the latest update date, please refer to t
 
 <p align="center">
   <strong>Desktop Organization & File Management</strong><br>
-  <iframe width="1020" height="664" src="https://www.youtube.com/embed/_n3DJ5FnjHw" title="Open Cowork A Demo Test" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  [![Desktop Organization & File Management](https://img.youtube.com/vi/_n3DJ5FnjHw/hqdefault.jpg)](https://www.youtube.com/watch?v=_n3DJ5FnjHw)
+  
 </p>
 
 
