@@ -47,15 +47,11 @@
 
 **Open Cowork 演示视频：**
 
-<p align="center">
-  <strong>桌面整理 & 文件管理</strong><br>
-  <video src="https://github.com/user-attachments/assets/org_dektop.mp4" width="800" controls></video>
-</p>
+  [![Desktop Organization & File Management](https://img.youtube.com/vi/_n3DJ5FnjHw/hqdefault.jpg)](https://www.youtube.com/watch?v=_n3DJ5FnjHw)
 
-<p align="center">
-  <strong>PPT 制作</strong><br>
-  <video src="https://github.com/user-attachments/assets/ppt.mp4" width="800" controls></video>
-</p>
+
+  [![PowerPoint Creation](https://img.youtube.com/vi/uuxAvCLIX9M/hqdefault.jpg)](https://www.youtube.com/watch?v=uuxAvCLIX9M)
+
 
 - [2026/01/13] cli模式下新增api欠费网络中断等意外情况的断点续跑功能。（原先手动中断/续跑功能保留）。统一/resume唤起。
 
