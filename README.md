@@ -141,6 +141,9 @@ docker pull chenglinhku/mlav3:latest
 **3. Choose Your Mode**
 
 ### Option A: Web UI Mode (Recommended)
+
+Attention：WEB UI does not support Cowork. Please Use CLI Mode.
+
 open localhost:9641 to set keys and base url.
 
 ```bash
