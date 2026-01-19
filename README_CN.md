@@ -47,7 +47,7 @@
 
 **Open Cowork 演示视频：**
 
-  [![Desktop Organization & File Management](https://img.youtube.com/vi/_n3DJ5FnjHw/hqdefault.jpg)](https://www.youtube.com/watch?v=_n3DJ5FnjHw)
+  [![Desktop Organization & File Management](https://img.youtube.com/vi/IuTVRPIIW-s/hqdefault.jpg)](https://www.youtube.com/watch?v=IuTVRPIIW-s)
 
 
   [![PowerPoint Creation](https://img.youtube.com/vi/uuxAvCLIX9M/hqdefault.jpg)](https://www.youtube.com/watch?v=uuxAvCLIX9M)
