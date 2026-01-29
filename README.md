@@ -46,7 +46,7 @@ If you pulled the image or code before the latest update date, please refer to t
 **Open Cowork Demo Videos:**
 
 
-  [![Desktop Organization & File Management](https://img.youtube.com/vi/_n3DJ5FnjHw/hqdefault.jpg)](https://www.youtube.com/watch?v=_n3DJ5FnjHw)
+  [![Desktop Organization & File Management](https://img.youtube.com/vi/IuTVRPIIW-s/hqdefault.jpg)](https://www.youtube.com/watch?v=IuTVRPIIW-s)
 
 
   [![PowerPoint Creation](https://img.youtube.com/vi/uuxAvCLIX9M/hqdefault.jpg)](https://www.youtube.com/watch?v=uuxAvCLIX9M)
@@ -141,6 +141,9 @@ docker pull chenglinhku/mlav3:latest
 **3. Choose Your Mode**
 
 ### Option A: Web UI Mode (Recommended)
+
+Attention：WEB UI does not support Cowork. Please Use CLI Mode.
+
 open localhost:9641 to set keys and base url.
 
 ```bash
