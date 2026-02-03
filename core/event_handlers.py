@@ -76,7 +76,7 @@ class ConsoleLogHandler:
             safe_print("❌ 5次提醒后仍未调用工具，触发thinking分析")
         else:
             if event.is_initial:
-                safe_print(f"[{self.agent_name}] 开始行动前进行初始规划...")
+                safe_print(f"[{event.agent_name}] 开始行动前进行初始规划...")
             else:
                 safe_print(f"[{event.agent_name}] Thinking分析已更新")
 
