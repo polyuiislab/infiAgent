@@ -104,17 +104,23 @@ class AgentExecutor:
     def run(self, task_id: str, user_input: str) -> Dict:
         """执行Agent任务"""
         self.event_emitter.dispatch(AgentStartEvent(agent_name=self.agent_name, task_input=user_input))
-        
+
+        # 存储 task_input 供压缩器使用
         self.current_task_input = user_input
+
+        # Agent入栈
         self.agent_id = self.hierarchy_manager.push_agent(self.agent_name, user_input)
-        
+
+        # 尝试加载已有的对话历史
         start_turn = self._load_state_from_storage(task_id)
         
         try:
+            # 首次thinking（初始规划）
             if start_turn == 0 and not self.first_thinking_done:
                 self.event_emitter.dispatch(CliDisplayEvent(message=f"[{self.agent_name}] 开始行动前进行初始规划..."))
                 thinking_result = self._trigger_thinking(task_id, user_input, is_first=True)
                 if thinking_result:
+                    self.event_emitter.dispatch(CliDisplayEvent(message=f"[{self.agent_name}] 初始规划完成"))
                     self.latest_thinking = thinking_result
                     self.first_thinking_done = True
                     self.hierarchy_manager.update_thinking(self.agent_id, thinking_result)
@@ -122,8 +128,11 @@ class AgentExecutor:
         except Exception as e:
             self._handle_execution_error(e)
             # sys.exit(1) is called inside, so we don't need to return
-
+        
+        # 强制工具调用计数器
         max_tool_try = 0
+
+        # 执行循环
         for turn in range(start_turn, self.max_turns):
             self.event_emitter.dispatch(CliDisplayEvent(message=f"\n--- 第 {turn + 1}/{self.max_turns} 轮执行 ---", style='separator'))
             
@@ -176,6 +185,7 @@ class AgentExecutor:
                         # 5次后仍不调用，触发thinking并报错
                         self.event_emitter.dispatch(CliDisplayEvent(message="❌ 5次提醒后仍未调用工具，触发thinking分析", style='error'))
                         thinking_result = self._trigger_thinking(task_id, user_input, is_first=False)
+                        # todo for jsonl: self.event_emitter.dispatch(ThinkingEvent(...)) 强制thinking事件
                         error_result = {
                             "status": "error",
                             "output": thinking_result or "多次未调用工具",
@@ -186,7 +196,8 @@ class AgentExecutor:
                         return error_result
                 # 重置计数器（成功调用了工具）
                 max_tool_try = 0
-                
+
+                # 执行所有工具调用
                 for tool_call in llm_response.tool_calls:
                     final_result = self._execute_tool_call(tool_call, task_id, user_input, turn)
                     if final_result:
@@ -230,14 +241,15 @@ class AgentExecutor:
         self.event_emitter.dispatch(CliDisplayEvent(
             message=f"📂 已加载对话历史，从第 {start_turn + 1} 轮继续\n   渲染历史: {len(self.action_history)}条, 完整轨迹: {len(self.action_history_fact)}条"
         ))
-        
+
+        # 检查是否已经完成（有final_output）
         for action in self.action_history_fact:
             if action.get("tool_name") == "final_output":
                 final_result = action.get("result", {})
                 self.event_emitter.dispatch(CliDisplayEvent(message=f"\n✅ 任务已完成，直接返回之前的final_output结果\n   状态: {final_result.get('status')}", style='success'))
-                # This is an early exit, so we just return the result without dispatching AgentEndEvent
                 return final_result
-
+        
+        # 恢复pending工具（如果有）
         if self.pending_tools:
             self.event_emitter.dispatch(CliDisplayEvent(message=f"🔄 发现{len(self.pending_tools)}个pending工具，恢复执行..."))
             self._recover_pending_tools(task_id)
@@ -261,30 +273,49 @@ class AgentExecutor:
 
     def _execute_tool_call(self, tool_call: Dict, task_id: str, user_input: str, turn: int) -> Dict:
         """执行单个工具调用并分发事件"""
+        # ✅ 在保存 pending 之前，为 level != 0 的工具添加 uuid
         arguments_with_uuid = self._add_uuid_if_needed(tool_call.name, tool_call.arguments)
         
+        # ✅ 先标记为pending（保存带 uuid 的参数）
         self.event_emitter.dispatch(ToolCallStartEvent(tool_name=tool_call.name, arguments=arguments_with_uuid))
 
         pending_tool = {"id": tool_call.id, "name": tool_call.name, "arguments": arguments_with_uuid, "status": "pending"}
         self.pending_tools.append(pending_tool)
-        self._save_state(task_id, user_input, turn)
-        
-        tool_result = self.tool_executor.execute(tool_call.name, arguments_with_uuid, task_id)
-        
+        self._save_state(task_id, user_input, turn)  # 保存pending状态
+
+        # 执行工具（使用带 uuid 的参数）
+        tool_result = self.tool_executor.execute(
+            tool_call.name,
+            arguments_with_uuid,
+            task_id
+        )
+
+        # ✅ 执行后从pending移除
         self.pending_tools = [t for t in self.pending_tools if t["id"] != tool_call.id]
         
+        # 发送工具结果事件
         self.event_emitter.dispatch(ToolCallEndEvent(
             tool_name=tool_call.name, status=tool_result.get('status', 'unknown'), result=tool_result
         ))
 
+        # 记录动作到历史（使用带 uuid 的参数）
         action_record = {"tool_name": tool_call.name, "arguments": arguments_with_uuid, "result": tool_result}
+
+        # 添加到完整轨迹（永不压缩）
         self.action_history_fact.append(action_record)
+
+        # 添加到渲染历史（会被压缩
         self.action_history.append(action_record)
+
         self.hierarchy_manager.add_action(self.agent_id, action_record)
+
+        # 工具执行后保存状态
         self._save_state(task_id, user_input, turn)
         
+        # 增加工具调用计数
         self.tool_call_counter += 1
         
+        # 如果是final_output，返回结果
         if tool_call.name == "final_output":
             return action_record
         return None
@@ -301,17 +332,29 @@ class AgentExecutor:
         sys.exit(1)
 
     def _add_uuid_if_needed(self, tool_name: str, arguments: Dict) -> Dict:
-        """为需要隔离上下文的子Agent调用添加uuid"""
+        """
+        为 level != 0 的工具添加 uuid 后缀到 task_input
+        
+        Args:
+            tool_name: 工具名称
+            arguments: 原始参数
+            
+        Returns:
+            处理后的参数（如果需要添加 uuid，返回新字典；否则返回原字典）
+        """
         try:
+            # 获取工具配置
             tool_config = self.config_loader.get_tool_config(tool_name)
             if tool_config.get("type") == "llm_call_agent" and tool_config.get("level", 0) != 0 and "task_input" in arguments:
                 import uuid
+                # 创建新字典（避免修改原始参数）
                 new_args = arguments.copy()
                 new_args["task_input"] += f" [call-{uuid.uuid4().hex[:8]}]"
                 self.event_emitter.dispatch(CliDisplayEvent(message=f"   🔖 为 level {tool_config.get('level')} 工具添加 uuid 后缀"))
                 return new_args
         except Exception as e:
             self.event_emitter.dispatch(CliDisplayEvent(message=f"⚠️ 添加 uuid 时出错: {e}", style='warning'))
+        # 其他情况返回原参数
         return arguments
     
     def _trigger_thinking(self, task_id: str, task_input: str, is_first: bool = False) -> str:
@@ -345,10 +388,11 @@ class AgentExecutor:
                 available_tools=self.available_tools,
                 tools_config=self.config_loader.all_tools
             )
-            self.event_emitter.dispatch(ThinkingEvent(agent_name=self.agent_name, result=result))
+            # 发送 thinking 事件（完整内容）
+            self.event_emitter.dispatch(ThinkingEvent(agent_name=self.agent_name, result=result, is_first=is_first))
             return result
         except Exception as e:
-            self.event_emitter.dispatch(ThinkingEvent("failed", agent_name=self.agent_name, result=str(e)))
+            # todo: thinking failed event
             raise Exception(str(e))
 
     def _compress_action_history_if_needed(self):
@@ -371,6 +415,8 @@ class AgentExecutor:
                 thinking=self.latest_thinking,
                 task_input=self.current_task_input
             )
+
+            # 如果发生了压缩，替换
             if len(compressed) < original_len:
                 self.event_emitter.dispatch(CliDisplayEvent(message=f"✅ 历史动作已压缩: {original_len}条 → {len(compressed)}条", style='success'))
                 self.action_history = compressed

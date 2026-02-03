@@ -63,7 +63,10 @@ class ConsoleLogHandler:
     
     def _print_thinking(self, event: ThinkingEvent):
         # thinking事件的结果同时用于CLI显示和JSONL，所以在这里打印
-        safe_print(f"[{event.agent_name}] 进度分析: {event.result}")
+        if event.is_first:
+            safe_print(f"[{self.agent_name}] 开始行动前进行初始规划...")
+        else:
+            safe_print(f"[{event.agent_name}] Thinking分析已更新")
 
     def _print_error(self, event: ErrorEvent):
         safe_print(event.error_display)
@@ -100,7 +103,10 @@ class JsonlStreamHandler:
         self.jsonl_emitter.token(f"工具 {event.tool_name} 完成: {event.status} - {output_preview}...")
 
     def _stream_thinking(self, event: ThinkingEvent):
-        self.jsonl_emitter.token(f"[{event.agent_name}] 进度分析: {event.result}")
+        if event.is_first:
+            self.jsonl_emitter.token(f"[{event.agent_name}] 初始规划: {event.result}")
+        else:
+            self.jsonl_emitter.token(f"[{event.agent_name}] 进度分析: {event.result}")
 
     def _stream_error(self, event: ErrorEvent):
         self.jsonl_emitter.error(event.error_display)

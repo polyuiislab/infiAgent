@@ -66,6 +66,7 @@ class ToolCallEndEvent(AgentEvent):
 @dataclass
 class ThinkingEvent(AgentEvent):
     """Agent进行思考或规划"""
+    is_first: bool = False
     event_type: str = "thinking"
     agent_name: str
     result: str
