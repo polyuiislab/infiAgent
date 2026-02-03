@@ -86,10 +86,12 @@ class AgentExecutor:
         
         # Agent状态
         self.agent_id = None
-        self.action_history, self.action_history_fact, self.pending_tools = [], [], []
+        self.action_history = []  # 渲染用（会压缩）
+        self.action_history_fact = []  # 完整轨迹（不压缩）
+        self.pending_tools = []  # 待执行的工具（用于恢复）
         self.latest_thinking = ""
         self.first_thinking_done = False
-        self.thinking_interval = 10
+        self.thinking_interval = 10  # 每10轮工具调用触发一次thinking
         self.tool_call_counter = 0
 
     def _setup_event_emitter(self):
@@ -218,8 +220,8 @@ class AgentExecutor:
                     final_output_result = self._execute_tool_call(tool_call, task_id, user_input, turn)
                     if final_output_result:
                         self.event_emitter.dispatch(AgentEndEvent(status='success', result=final_output_result))
-                        self.hierarchy_manager.pop_agent(self.agent_id, final_output_result.get('result', {}).get("output", ""))
-                        return final_output_result.get('result', {})
+                        self.hierarchy_manager.pop_agent(self.agent_id, final_output_result.get("output", ""))
+                        return final_output_result
                 
                 # 检查是否该触发thinking（每N轮工具调用）
                 if self.tool_call_counter > 0 and self.tool_call_counter % self.thinking_interval == 0:
@@ -369,7 +371,7 @@ class AgentExecutor:
         
         # 如果是final_output，返回结果
         if tool_call.name == "final_output":
-            return action_record
+            return tool_result
         return None
 
     def _handle_execution_error(self, e: Exception):
