@@ -127,10 +127,13 @@ class JsonlStreamHandler:
         self.jsonl_emitter.token(f"工具 {event.tool_name} 完成: {event.status} - {output_preview}...")
 
     def _stream_run_thinking_end(self, event: ThinkingEndEvent):
-        if event.is_first:
+        if event.is_initial:
             self.jsonl_emitter.token(f"[{event.agent_name}] 初始规划: {event.result}")
         else:
             self.jsonl_emitter.token(f"[{event.agent_name}] 进度分析: {event.result}")
+    
+    def _stream_run_thinking_fail(self, event: ThinkingFailEvent):
+        self.jsonl_emitter.warn(event.error_message)
 
     def _stream_system_error(self, event: ErrorEvent):
         self.jsonl_emitter.error(event.error_display)

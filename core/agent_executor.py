@@ -125,7 +125,7 @@ class AgentExecutor:
                 thinking_result = self._trigger_thinking(
                     task_id, 
                     user_input, 
-                    is_first=True
+                    is_initial=True
                 )
                 if thinking_result:
                     self.latest_thinking = thinking_result
@@ -200,7 +200,7 @@ class AgentExecutor:
                         thinking_result = self._trigger_thinking(
                             task_id, 
                             user_input, 
-                            is_first=False, 
+                            is_initial=False, 
                             is_forced=True
                         )
                         error_output = thinking_result or "多次未调用工具"
@@ -211,6 +211,7 @@ class AgentExecutor:
                         }
                         self.hierarchy_manager.pop_agent(self.agent_id, str(error_result))
                         self.event_emitter.dispatch(AgentEndEvent(status='error', result=error_result))
+                        self.event_emitter.dispatch(ThinkingFailEvent(agent_name=self.agent_name, error_message=f"[{self.agent_name}] 强制thinking: {thinking_result if thinking_result else '分析失败'}"))
                         return error_result
                 # 重置计数器（成功调用了工具）
                 max_tool_try = 0
@@ -225,7 +226,7 @@ class AgentExecutor:
                 
                 # 检查是否该触发thinking（每N轮工具调用）
                 if self.tool_call_counter > 0 and self.tool_call_counter % self.thinking_interval == 0:
-                    thinking_result = self._trigger_thinking(task_id, user_input, is_first=False)
+                    thinking_result = self._trigger_thinking(task_id, user_input, is_initial=False)
                     if thinking_result:
                         self.latest_thinking = thinking_result
                         self.hierarchy_manager.update_thinking(self.agent_id, thinking_result)
@@ -454,14 +455,14 @@ class AgentExecutor:
             ))
             return arguments
     
-    def _trigger_thinking(self, task_id: str, task_input: str, is_first: bool = False, is_forced: bool = False) -> str:
+    def _trigger_thinking(self, task_id: str, task_input: str, is_initial: bool = False, is_forced: bool = False) -> str:
         """
         触发Thinking Agent进行分析
         
         Args:
             task_id: 任务ID
             task_input: 任务输入
-            is_first: 是否是首次thinking
+            is_initial: 是否是首次thinking
             is_forced: 是否因为多次未调用工具而被强制触发thinking
             
         Returns:
@@ -470,7 +471,7 @@ class AgentExecutor:
         # 发送Thinking开始事件
         self.event_emitter.dispatch(ThinkingStartEvent(
             agent_name=self.agent_name, 
-            is_initial=is_first, 
+            is_initial=is_initial, 
             is_forced=is_forced
         ))
         try:
@@ -495,7 +496,9 @@ class AgentExecutor:
             # 发送 thinking 事件（完整内容）
             self.event_emitter.dispatch(ThinkingEndEvent(
                 agent_name=self.agent_name, 
-                result=result
+                result=result,
+                is_initial=is_initial,
+                is_forced=is_forced
             ))
             return result
         except Exception as e:

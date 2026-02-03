@@ -66,8 +66,10 @@ class ThinkingEndEvent(AgentEvent):
     event_type: ClassVar[str] = "run.thinking.end"
     
     agent_name: str
+    is_initial: bool
     result: str
     # Default arguments last
+    is_forced: bool = False 
     timestamp: float = field(default_factory=time.time)
 
 @dataclass
