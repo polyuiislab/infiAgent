@@ -48,7 +48,6 @@ class AgentExecutor:
         self.available_tools = agent_config.get("available_tools", [])
         self.max_turns = 10000000
         requested_model = agent_config.get("model_type", "claude-3-7-sonnet-20250219")
-        self.model_type = requested_model
         
         # 初始化LLM客户端
         self.llm_client = SimpleLLMClient()
@@ -56,17 +55,18 @@ class AgentExecutor:
         
         # 验证并调整模型
         available_models = self.llm_client.models
-        final_model = self.model_type
-        if self.model_type not in available_models:
+        final_model = requested_model
+        is_fallback = False
+        if requested_model not in available_models:
             final_model = available_models[0]
-            self.event_emitter.dispatch(CliDisplayEvent(
-                message=f"⚠️请求的模型 '{self.model_type}' 不在可用列表中", style='warning'
-            ))
-            self.model_type = final_model
+            is_fallback = True
+        self.model_type = final_model
         
-        self.event_emitter.dispatch(CliDisplayEvent(
-            message=f"✅使用回退模型: {final_model}" if final_model != requested_model else f"✅使用请求的模型: {final_model}",
-            style='success'
+        # 发送模型选择事件
+        self.event_emitter.dispatch(ModelSelectionEvent(
+            requested_model=requested_model,
+            final_model=final_model,
+            is_fallback=is_fallback
         ))
 
         # 初始化上下文构造器（负责完整上下文构建）
@@ -103,8 +103,11 @@ class AgentExecutor:
     
     def run(self, task_id: str, user_input: str) -> Dict:
         """执行Agent任务"""
-        self.event_emitter.dispatch(AgentStartEvent(agent_name=self.agent_name, task_input=user_input))
 
+        self.event_emitter.dispatch(AgentStartEvent(
+            agent_name=self.agent_name, 
+            task_input=user_input
+        ))        
         # 存储 task_input 供压缩器使用
         self.current_task_input = user_input
 
@@ -117,10 +120,12 @@ class AgentExecutor:
         try:
             # 首次thinking（初始规划）
             if start_turn == 0 and not self.first_thinking_done:
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"[{self.agent_name}] 开始行动前进行初始规划..."))
-                thinking_result = self._trigger_thinking(task_id, user_input, is_first=True)
+                thinking_result = self._trigger_thinking(
+                    task_id, 
+                    user_input, 
+                    is_first=True
+                )
                 if thinking_result:
-                    self.event_emitter.dispatch(CliDisplayEvent(message=f"[{self.agent_name}] 初始规划完成"))
                     self.latest_thinking = thinking_result
                     self.first_thinking_done = True
                     self.hierarchy_manager.update_thinking(self.agent_id, thinking_result)
@@ -134,7 +139,10 @@ class AgentExecutor:
 
         # 执行循环
         for turn in range(start_turn, self.max_turns):
-            self.event_emitter.dispatch(CliDisplayEvent(message=f"\n--- 第 {turn + 1}/{self.max_turns} 轮执行 ---", style='separator'))
+            self.event_emitter.dispatch(CliDisplayEvent(
+                message=f"\n--- 第 {turn + 1}/{self.max_turns} 轮执行 ---", 
+                style='separator'
+            ))
             
             try:
                 # 每轮开始前保存状态
@@ -163,14 +171,18 @@ class AgentExecutor:
                         "error_information": llm_response.error_information
                     }
                     self.hierarchy_manager.pop_agent(self.agent_id, str(error_result))
+                    self.event_emitter.dispatch(AgentEndEvent(status='error', result=error_result))
                     return error_result
 
                 if not llm_response.tool_calls:
                     # 强制工具调用机制
-                    max_tool_try += 1
-                    self.event_emitter.dispatch(CliDisplayEvent(message=f"⚠️ LLM未调用工具，第{max_tool_try}/5次提醒", style='warning'))
-                    
-                    if max_tool_try <= 5:
+
+                    if max_tool_try < 5:
+                        max_tool_try += 1
+                        self.event_emitter.dispatch(CliDisplayEvent(
+                            message=f"⚠️ LLM未调用工具，第{max_tool_try}/5次提醒", 
+                            style='warning'
+                        ))
                         self.action_history.append({
                             "tool_name": "_no_tool_call",
                             "arguments": {},
@@ -183,14 +195,18 @@ class AgentExecutor:
                         continue
                     else:
                         # 5次后仍不调用，触发thinking并报错
-                        self.event_emitter.dispatch(CliDisplayEvent(message="❌ 5次提醒后仍未调用工具，触发thinking分析", style='error'))
-                        thinking_result = self._trigger_thinking(task_id, user_input, is_first=False)
-                        # todo for jsonl: self.event_emitter.dispatch(ThinkingEvent(...)) 强制thinking事件
+                        thinking_result = self._trigger_thinking(
+                            task_id, 
+                            user_input, 
+                            is_first=False, 
+                            is_forced=True
+                        )
+                        error_output = thinking_result or "多次未调用工具"
                         error_result = {
                             "status": "error",
-                            "output": thinking_result or "多次未调用工具",
+                            "output": error_output,
                             "error_information": "Agent拒绝调用工具"
-                            }
+                        }
                         self.hierarchy_manager.pop_agent(self.agent_id, str(error_result))
                         self.event_emitter.dispatch(AgentEndEvent(status='error', result=error_result))
                         return error_result
@@ -199,15 +215,14 @@ class AgentExecutor:
 
                 # 执行所有工具调用
                 for tool_call in llm_response.tool_calls:
-                    final_result = self._execute_tool_call(tool_call, task_id, user_input, turn)
-                    if final_result:
-                        self.event_emitter.dispatch(AgentEndEvent(status='success', result=final_result))
-                        self.hierarchy_manager.pop_agent(self.agent_id, final_result.get("output", ""))
-                        return final_result
+                    final_output_result = self._execute_tool_call(tool_call, task_id, user_input, turn)
+                    if final_output_result:
+                        self.event_emitter.dispatch(AgentEndEvent(status='success', result=final_output_result))
+                        self.hierarchy_manager.pop_agent(self.agent_id, final_output_result.get('result', {}).get("output", ""))
+                        return final_output_result.get('result', {})
                 
                 # 检查是否该触发thinking（每N轮工具调用）
-                if self.tool_call_counter % self.thinking_interval == 0:
-                    self.event_emitter.dispatch(CliDisplayEvent(f"[{self.agent_name}] 第{self.tool_call_counter}轮工具调用，触发thinking分析"))
+                if self.tool_call_counter > 0 and self.tool_call_counter % self.thinking_interval == 0:
                     thinking_result = self._trigger_thinking(task_id, user_input, is_first=False)
                     if thinking_result:
                         self.latest_thinking = thinking_result
@@ -217,57 +232,79 @@ class AgentExecutor:
             
             except Exception as e:
                 self._handle_execution_error(e)
-
-        self.event_emitter.dispatch(CliDisplayEvent(message=f"\n⚠️ 达到最大轮次限制: {self.max_turns}", style='error'))
-        timeout_result = {"status": "error", "output": "执行超过最大轮次限制", "error_information": f"Max turns {self.max_turns} exceeded"}
+        timeout_result = {
+            "status": "error",
+            "output": f"执行超过最大轮次限制: {self.max_turns}",
+            "error_information": f"Max turns {self.max_turns} exceeded"
+        }
         self.hierarchy_manager.pop_agent(self.agent_id, str(timeout_result))
         self.event_emitter.dispatch(AgentEndEvent(status='error', result=timeout_result))
+        self.event_emitter.dispatch(CliDisplayEvent(
+            message="\n⚠️ 达到最大轮次限制: {self.max_turns}"
+        ))
+        
         return timeout_result
 
     def _load_state_from_storage(self, task_id: str) -> int:
         """从存储加载状态, 返回起始轮次."""
         loaded_data = self.conversation_storage.load_actions(task_id, self.agent_id)
-        if not loaded_data:
-            return 0
-
-        self.action_history = loaded_data.get("action_history", [])
-        self.action_history_fact = loaded_data.get("action_history_fact", [])
-        self.pending_tools = loaded_data.get("pending_tools", [])
-        self.latest_thinking = loaded_data.get("latest_thinking", "")
-        self.first_thinking_done = loaded_data.get("first_thinking_done", False)
-        self.tool_call_counter = loaded_data.get("tool_call_counter", 0)
-        start_turn = loaded_data.get("current_turn", 0) + 1
+        start_turn = 0
         
-        self.event_emitter.dispatch(CliDisplayEvent(
-            message=f"📂 已加载对话历史，从第 {start_turn + 1} 轮继续\n   渲染历史: {len(self.action_history)}条, 完整轨迹: {len(self.action_history_fact)}条"
-        ))
-
-        # 检查是否已经完成（有final_output）
-        for action in self.action_history_fact:
-            if action.get("tool_name") == "final_output":
-                final_result = action.get("result", {})
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"\n✅ 任务已完成，直接返回之前的final_output结果\n   状态: {final_result.get('status')}", style='success'))
-                return final_result
-        
-        # 恢复pending工具（如果有）
-        if self.pending_tools:
-            self.event_emitter.dispatch(CliDisplayEvent(message=f"🔄 发现{len(self.pending_tools)}个pending工具，恢复执行..."))
-            self._recover_pending_tools(task_id)
+        if loaded_data:
+            self.action_history = loaded_data.get("action_history", [])
+            self.action_history_fact = loaded_data.get("action_history_fact", [])
+            self.pending_tools = loaded_data.get("pending_tools", [])
+            self.latest_thinking = loaded_data.get("latest_thinking", "")
+            self.first_thinking_done = loaded_data.get("first_thinking_done", False)
+            self.tool_call_counter = loaded_data.get("tool_call_counter", 0)
+            start_turn = loaded_data.get("current_turn", 0) + 1
+            
+            self.event_emitter.dispatch(HistoryLoadEvent(
+                start_turn=start_turn,
+                action_history_len=len(self.action_history),
+                action_history_fact_len=len(self.action_history_fact),
+                pending_tool_count=len(self.pending_tools)
+            ))
+            
+            # 检查是否已经完成（有final_output）
+            for action in self.action_history_fact:
+                if action.get("tool_name") == "final_output":
+                    final_result = action.get("result", {})
+                    self.event_emitter.dispatch(CliDisplayEvent(
+                        message=f"\n✅ 任务已完成，直接返回之前的final_output结果\n   状态: {final_result.get('status')}", 
+                        style='success'
+                    ))
+                    return final_result
+            
+            # 恢复pending工具（如果有）
+            if self.pending_tools:
+                self._recover_pending_tools(task_id)
 
         return start_turn
 
     def _execute_llm_call(self, system_prompt: str):
         """执行LLM调用并分发事件"""
-        self.event_emitter.dispatch(LlmCallStartEvent(model=self.model_type, system_prompt=system_prompt))
-        
+
         history = [ChatMessage(role="user", content="<历史动作>是你之前已经执行的动作，不要重复<历史动作>内的动作！！请输出下一个动作")]
+        
+        # 发送LLM调用开始事件
+        self.event_emitter.dispatch(LlmCallStartEvent(
+            model=self.model_type, 
+            system_prompt=system_prompt
+        ))
+        
+        # 调用LLM（重试机制已在 llm_client 内部实现）
         llm_response = self.llm_client.chat(
-            history=history, model=self.model_type, system_prompt=system_prompt,
-            tool_list=self.available_tools, tool_choice="required"
+            history=history,
+            model=self.model_type,
+            system_prompt=system_prompt,
+            tool_list=self.available_tools,
+            tool_choice="required"  # 强制工具调用
         )
         
         self.event_emitter.dispatch(LlmCallEndEvent(
-            llm_output=llm_response.output, tool_calls=llm_response.tool_calls
+            llm_output=llm_response.output, 
+            tool_calls=llm_response.tool_calls
         ))
         return llm_response
 
@@ -277,9 +314,18 @@ class AgentExecutor:
         arguments_with_uuid = self._add_uuid_if_needed(tool_call.name, tool_call.arguments)
         
         # ✅ 先标记为pending（保存带 uuid 的参数）
-        self.event_emitter.dispatch(ToolCallStartEvent(tool_name=tool_call.name, arguments=arguments_with_uuid))
+        # 发送工具调用开始事件
+        self.event_emitter.dispatch(ToolCallStartEvent(
+            tool_name=tool_call.name, 
+            arguments=arguments_with_uuid
+        ))
 
-        pending_tool = {"id": tool_call.id, "name": tool_call.name, "arguments": arguments_with_uuid, "status": "pending"}
+        pending_tool = {
+            "id": tool_call.id,
+            "name": tool_call.name,
+            "arguments": arguments_with_uuid,
+            "status": "pending"
+        }
         self.pending_tools.append(pending_tool)
         self._save_state(task_id, user_input, turn)  # 保存pending状态
 
@@ -295,16 +341,22 @@ class AgentExecutor:
         
         # 发送工具结果事件
         self.event_emitter.dispatch(ToolCallEndEvent(
-            tool_name=tool_call.name, status=tool_result.get('status', 'unknown'), result=tool_result
+            tool_name=tool_call.name, 
+            status=tool_result.get('status', 'unknown'), 
+            result=tool_result
         ))
 
         # 记录动作到历史（使用带 uuid 的参数）
-        action_record = {"tool_name": tool_call.name, "arguments": arguments_with_uuid, "result": tool_result}
-
+        action_record = {
+            "tool_name": tool_call.name,
+            "arguments": arguments_with_uuid,
+            "result": tool_result
+        }
+        
         # 添加到完整轨迹（永不压缩）
         self.action_history_fact.append(action_record)
 
-        # 添加到渲染历史（会被压缩
+        # 添加到渲染历史（会被压缩）
         self.action_history.append(action_record)
 
         self.hierarchy_manager.add_action(self.agent_id, action_record)
@@ -322,16 +374,44 @@ class AgentExecutor:
 
     def _handle_execution_error(self, e: Exception):
         """统一处理执行过程中的异常"""
-        error_type, error_msg, tb = type(e).__name__, str(e), traceback.format_exc()
-        error_display = f"\n❌ 执行过程中发生错误，任务已中断\n{'━'*40}\n🔴 错误类型: {error_type}\n📝 错误信息: {error_msg}\n{'━'*40}\n\n📋 详细堆栈:\n{tb}"
-        if self.latest_thinking:
-            error_display += f"\n\n💭 当前进度:\n{self.latest_thinking[:500]}\n"
-        error_display += f"\n{'━'*40}\n💡 任务已保存在当前状态，请:\n   1. 根据错误信息排查问题\n   2. 重新启动 CLI 并输入 /resume 命令恢复任务\n{'━'*40}\n"
+        # 获取详细错误信息
+        error_type = type(e).__name__
+        error_msg = str(e)
+        error_traceback = traceback.format_exc()
         
+        # 构建友好的错误提示消息
+        error_display = f"""
+❌ 执行过程中发生错误，任务已中断
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 错误类型: {error_type}
+📝 错误信息: {error_msg}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 详细堆栈:
+{error_traceback}
+"""
+        
+        # 添加当前进度信息
+        if self.latest_thinking:
+            error_display += f"\n💭 当前进度:\n{self.latest_thinking[:500]}\n"
+        
+        error_display += """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 任务已保存在当前状态，请:
+   1. 根据错误信息排查问题（修复网络、配置等）
+   2. 重新启动 CLI 并输入 /resume 命令恢复任务
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        # 通过事件发送错误
         self.event_emitter.dispatch(ErrorEvent(error_display=error_display))
+        # 直接退出程序
         sys.exit(1)
 
-    def _add_uuid_if_needed(self, tool_name: str, arguments: Dict) -> Dict:
+    def _add_uuid_if_needed(
+            self, 
+            tool_name: str, 
+            arguments: Dict
+        ) -> Dict:
         """
         为 level != 0 的工具添加 uuid 后缀到 task_input
         
@@ -345,19 +425,34 @@ class AgentExecutor:
         try:
             # 获取工具配置
             tool_config = self.config_loader.get_tool_config(tool_name)
-            if tool_config.get("type") == "llm_call_agent" and tool_config.get("level", 0) != 0 and "task_input" in arguments:
+            tool_level = tool_config.get("level", 0)
+            tool_type = tool_config.get("type", "")
+            
+            # 只对 level != 0 的 llm_call_agent 添加 uuid
+            if tool_type == "llm_call_agent" and tool_level != 0 and "task_input" in arguments:
                 import uuid
                 # 创建新字典（避免修改原始参数）
-                new_args = arguments.copy()
-                new_args["task_input"] += f" [call-{uuid.uuid4().hex[:8]}]"
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"   🔖 为 level {tool_config.get('level')} 工具添加 uuid 后缀"))
-                return new_args
+                new_arguments = arguments.copy()
+                original_input = arguments["task_input"]
+                random_suffix = f" [call-{uuid.uuid4().hex[:8]}]"
+                new_arguments["task_input"] = original_input + random_suffix
+                self.event_emitter.dispatch(CliDisplayEvent(
+                    message=f"   🔖 为 level {tool_level} 工具添加 uuid 后缀", 
+                    style='info'
+                ))
+                return new_arguments
+            
+            # 其他情况返回原参数
+            return arguments
+        
         except Exception as e:
-            self.event_emitter.dispatch(CliDisplayEvent(message=f"⚠️ 添加 uuid 时出错: {e}", style='warning'))
-        # 其他情况返回原参数
-        return arguments
+            self.event_emitter.dispatch(CliDisplayEvent(
+                message=f"⚠️ 添加 uuid 时出错: {e}", 
+                style='warning'
+            ))
+            return arguments
     
-    def _trigger_thinking(self, task_id: str, task_input: str, is_first: bool = False) -> str:
+    def _trigger_thinking(self, task_id: str, task_input: str, is_first: bool = False, is_forced: bool = False) -> str:
         """
         触发Thinking Agent进行分析
         
@@ -365,10 +460,17 @@ class AgentExecutor:
             task_id: 任务ID
             task_input: 任务输入
             is_first: 是否是首次thinking
+            is_forced: 是否因为多次未调用工具而被强制触发thinking
             
         Returns:
             分析结果
         """
+        # 发送Thinking开始事件
+        self.event_emitter.dispatch(ThinkingStartEvent(
+            agent_name=self.agent_name, 
+            is_initial=is_first, 
+            is_forced=is_forced
+        ))
         try:
             from services.thinking_agent import ThinkingAgent
 
@@ -389,10 +491,18 @@ class AgentExecutor:
                 tools_config=self.config_loader.all_tools
             )
             # 发送 thinking 事件（完整内容）
-            self.event_emitter.dispatch(ThinkingEvent(agent_name=self.agent_name, result=result, is_first=is_first))
+            self.event_emitter.dispatch(ThinkingEndEvent(
+                agent_name=self.agent_name, 
+                result=result
+            ))
             return result
         except Exception as e:
-            # todo: thinking failed event
+            error_msg = str(e)
+            # 发送Thinking失败事件
+            self.event_emitter.dispatch(ThinkingFailEvent(
+                agent_name=self.agent_name, 
+                error_message=error_msg
+            ))
             raise Exception(str(e))
 
     def _compress_action_history_if_needed(self):
@@ -418,19 +528,28 @@ class AgentExecutor:
 
             # 如果发生了压缩，替换
             if len(compressed) < original_len:
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"✅ 历史动作已压缩: {original_len}条 → {len(compressed)}条", style='success'))
+                self.event_emitter.dispatch(CliDisplayEvent(
+                    message=f"✅ 历史动作已压缩: {original_len}条 → {len(compressed)}条", 
+                    style='success'
+                ))
                 self.action_history = compressed
         except Exception as e:
-            self.event_emitter.dispatch(CliDisplayEvent(message=f"⚠️ 压缩失败: {e}", style='warning'))
+            self.event_emitter.dispatch(CliDisplayEvent(
+                message=f"⚠️ 压缩失败: {e}", 
+                style='warning'
+            ))
             traceback.print_exc()
     
     def _recover_pending_tools(self, task_id: str):
         """恢复pending状态的工具调用"""
-        for pending_tool in self.pending_tools[:]:  # 复制列表
+        for pending_tool in self.pending_tools:
             tool_name, tool_args = pending_tool['name'], pending_tool['arguments']
             try:
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"   🔄 恢复执行: {tool_name}\n   📋 参数: {tool_args}"))
-                # todo: send recover event
+                self.event_emitter.dispatch(CliDisplayEvent(
+                    message=f"   🔄 恢复执行: {tool_name}\n   📋 参数: {tool_args}", 
+                    style='info'
+                ))
+                
                 # 重新执行工具
                 tool_result = self.tool_executor.execute(
                     tool_name,
@@ -444,20 +563,26 @@ class AgentExecutor:
                     "arguments": tool_args,
                     "result": tool_result
                 }
-
+                
                 self.action_history_fact.append(action_record)
                 self.action_history.append(action_record)
                 
                 # 从pending移除
                 self.pending_tools.remove(pending_tool)
                 
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"   ✅ 恢复完成: {tool_name}", style='success'))
+                self.event_emitter.dispatch(CliDisplayEvent(
+                    message=f"   ✅ 恢复完成: {tool_name}", 
+                    style='success'
+                ))
                 
                 # 如果是final_output，直接返回
                 if tool_name == "final_output":
                     return tool_result
             except Exception as e:
-                self.event_emitter.dispatch(CliDisplayEvent(message=f"   ❌ 恢复失败: {tool_name} - {e}", style='error'))
+                self.event_emitter.dispatch(CliDisplayEvent(
+                    message=f"   ❌ 恢复失败: {tool_name} - {e}", 
+                    style='error'
+                ))
         # 清空pending列表
         self.pending_tools = []
     

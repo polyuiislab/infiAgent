@@ -1,6 +1,6 @@
-# Agent 事件系统 (Event System)
+# Agent 事件系统 (Event System) - v2
 
-本文档旨在说明 `infiAgent` 项目中的事件驱动架构，为二次开发和系统集成提供指导。
+本文档旨在说明 `infiAgent` 项目中经过规范化重构后的事件驱动架构，为二次开发和系统集成提供指导。
 
 ## 1. 设计哲学
 
@@ -11,31 +11,36 @@
 
 这种设计使得添加新的输出渠道（如HTTP SSE、WebSocket、文件日志等）变得非常简单，只需实现一个新的事件处理器并注册即可，无需修改`AgentExecutor`的任何代码。
 
-## 2. 事件划分标准
+## 2. 事件命名与划分规范
 
-我们将事件明确划分为两大类，以区分其用途：
+为了保证事件的清晰性和可扩展性，我们遵循以下规范：
 
-### A. 核心生命周期事件 (Lifecycle Events)
+### A. 事件命名 (`event_type`)
 
-这类事件标志着Agent执行过程中的**关键状态转变**。它们是外部系统（如Web UI后端、自动化测试框架、监控面板）进行程序化消费的主要对象。
+所有事件的 `event_type` 字符串都遵循 **`phase.domain.action`** 的三段式命名格式：
 
--   **特征**:
-    -   代表一个明确的、重要的业务步骤（如任务开始、LLM调用、工具执行）。
-    -   携带结构化、可预测的数据负载 (payload)。
-    -   是构建Agent执行轨迹和进行状态分析的基础。
--   **消费建议**: 外部系统和需要理解Agent行为的模块**应该**监听这些事件。
+-   `phase`: 描述事件发生在Agent生命周期的哪个主要阶段。
+    -   `prepare`: 任务执行前（循环开始前）的准备阶段。
+    -   `run`: Agent的核心执行循环阶段。
+    -   `agent`: 贯穿整个生命周期的Agent自身事件。
+    -   `system`: 非业务逻辑的系统级事件，如CLI打印或严重错误。
+-   `domain`: 事件所属的业务领域。
+    -   `model`: 模型选择。
+    -   `history`: 对话历史加载。
+    -   `llm`: 大语言模型交互。
+    -   `tool`: 工具执行。
+    -   `thinking`: Agent的自我反思/规划。
+-   `action`: 具体的动作。
+    -   `start`, `end`, `fail`, `select`, `load` 等。
 
-### B. CLI展示事件 (Display Events)
+**示例**: `prepare.model.select` 表示在“准备阶段”，关于“模型领域”的“选择”事件。
 
-这类事件的唯一目的是在**命令行界面(CLI)中向用户显示信息**。它们本质上是用户界面(UI)的一部分。
+### B. 事件类别
 
--   **特征**:
-    -   携带非结构化或半结构化的字符串消息。
-    -   用于提供进度反馈、展示非关键信息、打印警告等。
-    -   其内容和格式可能会为了提升CLI用户体验而频繁变动。
--   **消费建议**:
-    -   只有负责CLI输出的处理器（如`ConsoleLogHandler`）**应该**处理这类事件。
-    -   所有其他程序化系统（Web UI后端、JSONL流等）**应该忽略**这类事件。
+我们将事件明确划分为两大类：
+
+-   **核心生命周期事件**: 代表关键状态转变，携带结构化数据，是程序化消费的主要对象。
+-   **系统/展示事件**: 主要用于CLI展示或表示非业务逻辑的系统状态（如错误），通常不被外部业务系统消费。
 
 ---
 
@@ -43,24 +48,31 @@
 
 所有事件均定义在 `core/events.py` 中。
 
-### 核心生命周期事件 (Lifecycle Events)
+### 核心生命周期事件
 
-| 事件类 (Event Class)      | `event_type` 字符串 | 触发时机                                       | 主要数据字段 (`payload`)                                  |
-| ------------------------- | ------------------- | ---------------------------------------------- | --------------------------------------------------------- |
-| `AgentStartEvent`         | `agent_start`       | Agent的 `run` 方法被调用时。                   | `agent_name`, `task_input`                                |
-| `AgentEndEvent`           | `agent_end`         | Agent任务结束（成功、失败或超时）。            | `status` (字符串), `result` (最终产出或错误信息)        |
-| `LlmCallStartEvent`       | `llm_call_start`    | 即将向大语言模型（LLM）发起请求时。            | `model` (模型名称), `system_prompt` (完整系统提示词)      |
-| `LlmCallEndEvent`         | `llm_call_end`      | 收到LLM的响应后。                              | `llm_output` (模型输出文本), `tool_calls` (工具调用列表)    |
-| `ToolCallStartEvent`      | `tool_call_start`   | 即将执行一个工具时。                           | `tool_name`, `arguments` (工具参数)                       |
-| `ToolCallEndEvent`        | `tool_call_end`     | 工具执行完毕后。                               | `tool_name`, `status`, `result` (工具返回的结果)          |
-| `ThinkingEvent`           | `thinking`          | Agent进行反思、规划或总结时。                  | `agent_name`, `result` (思考/规划的文本内容)              |
-| `ErrorEvent`              | `error`             | 发生导致任务中断的严重错误时。                 | `error_display` (格式化后的完整错误信息字符串)          |
+| `event_type` 字符串         | 事件类 (Event Class)      | 触发时机                                          | 主要数据字段 (`payload`)                                  |
+| --------------------------- | ------------------------- | ------------------------------------------------- | --------------------------------------------------------- |
+| **Agent Lifecycle**         |                           |                                                   |                                                           |
+| `agent.start`               | `AgentStartEvent`         | Agent的 `run` 方法被调用时。                      | `agent_name`, `task_input`                                |
+| `agent.end`                 | `AgentEndEvent`           | Agent任务结束（成功、失败或超时）。               | `status` (字符串), `result` (最终产出或错误信息)        |
+| **Prepare Phase**           |                           |                                                   |                                                           |
+| `prepare.model.select`      | `ModelSelectionEvent`     | 在初始化时选择最终要使用的LLM。                   | `requested_model`, `final_model`, `is_fallback`           |
+| `prepare.history.load`      | `HistoryLoadEvent`        | 从存储中成功加载历史记录后。                      | `start_turn`, `action_history_len`, `pending_tool_count`  |
+| **Run Phase**               |                           |                                                   |                                                           |
+| `run.llm.start`             | `LlmCallStartEvent`       | 即将向LLM发起请求时。                             | `model`, `system_prompt`                                  |
+| `run.llm.end`               | `LlmCallEndEvent`         | 收到LLM的响应后。                                 | `llm_output`, `tool_calls` (列表)                         |
+| `run.tool.start`            | `ToolCallStartEvent`      | 即将执行一个工具时。                              | `tool_name`, `arguments`                                  |
+| `run.tool.end`              | `ToolCallEndEvent`        | 工具执行完毕后。                                  | `tool_name`, `status`, `result`                           |
+| `run.thinking.start`        | `ThinkingStartEvent`      | Agent开始思考/规划时。                            | `agent_name`, `is_initial` (是否初次规划), `is_forced` (是否强制) |
+| `run.thinking.end`          | `ThinkingEndEvent`        | 思考/规划成功结束。                               | `agent_name`, `result` (思考结果文本)                     |
+| `run.thinking.fail`         | `ThinkingFailEvent`       | 思考/规划过程中发生错误。                         | `agent_name`, `error_message`                             |
 
-### CLI展示事件 (Display Events)
+### 系统与展示事件
 
-| 事件类 (Event Class) | `event_type` 字符串 | 触发时机                               | 主要数据字段 (`payload`)                                  |
-| -------------------- | ------------------- | -------------------------------------- | --------------------------------------------------------- |
-| `CliDisplayEvent`    | `cli_display`       | 需要在控制台打印任何非关键的状态信息时。 | `message` (要打印的字符串), `style` (`info`, `warning`等) |
+| `event_type` 字符串       | 事件类 (Event Class)    | 触发时机                                               | 主要数据字段 (`payload`)                                  |
+| ------------------------- | ----------------------- | ------------------------------------------------------ | --------------------------------------------------------- |
+| `system.error`            | `ErrorEvent`            | 发生导致任务中断的严重错误时。                         | `error_display` (格式化后的完整错误信息字符串)          |
+| `system.cli_display`      | `CliDisplayEvent`       | 需要在控制台打印任何非关键的状态信息时。               | `message` (要打印的字符串), `style` (`info`, `warning`等) |
 
 ---
 
@@ -75,8 +87,9 @@
 -   **如果答案是“是”**:
     -   这应该是一个**核心生命周期事件**。
     -   在 `core/events.py` 中，创建一个新的 `dataclass` 继承自 `AgentEvent`。
+    -   遵循 `phase.domain.action` 的规范为 `event_type` 命名。
     -   为它定义清晰、结构化的字段。
-    -   **示例**: 假设我们要引入一个“上下文压缩”的详细事件，供UI展示压缩细节。可以创建一个 `ContextCompressionEvent`，包含 `original_tokens`, `compressed_tokens`, `summary` 等字段。
+    -   **示例**: 假设我们要引入一个“上下文压缩”的详细事件，供UI展示压缩细节。可以创建一个 `ContextCompressionEvent`，`event_type` 为 `run.context.compress`，并包含 `original_tokens`, `compressed_tokens`, `summary` 等字段。
 
 -   **如果答案是“否”**:
     -   这应该是一个**CLI展示事件**。
@@ -91,10 +104,10 @@
 ### 步骤2: 更新事件处理器
 
 -   **如果添加了新的核心生命周期事件**:
-    -   **必须** 更新 `ConsoleLogHandler` (`core/event_handlers.py`)，添加一个对应的 `_print_...` 方法来在CLI中友好地展示它。
-    -   **可选** 更新 `JsonlStreamHandler`，如果你希望这个新事件也通过JSONL流推送到外部工具。
+    -   **必须** 更新 `ConsoleLogHandler` (`core/event_handlers.py`)，添加一个对应的 `_print_...` 方法来在CLI中友好地展示它（方法名将 `.` 替换为 `_`）。
+    -   **必须** 考虑是否需要更新 `JsonlStreamHandler`。根据新的实现，`JsonlStreamHandler`会自动序列化所有非系统事件，因此通常无需修改，除非需要特殊处理。
 
 -   **如果只是分发了新的`CliDisplayEvent`**:
-    -   **无需任何操作**。现有的 `ConsoleLogHandler` 会自动处理它，而其他处理器会忽略它。这就是该设计的优势所在。
+    -   **无需任何操作**。现有的 `ConsoleLogHandler` 会自动处理它，而 `JsonlStreamHandler` 会自动忽略它。这就是该设计的优势所在。
 
 遵循以上准则，可以确保我们的事件系统在不断迭代的过程中，始终保持清晰、解耦和易于维护。
