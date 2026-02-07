@@ -9,6 +9,7 @@ tools:
       - coder_agent
       - create_figures_agent
       - human_in_loop
+      - load_skill
       - judge_agent
       - file_read
       - file_write
@@ -32,7 +33,7 @@ tools:
         2. 使用data_analysis_agent工具获取实验想法和计划
         3. 使用coder_agent完成实验（如果是代码实验）
         4. 使用create_figures_agent将实验数据转换为图表，该 agent 也可以生成框架图，写实图像等各种类型的图像。
-        5. 使用material_to_paper_agent工具将实验数据和图表转换为论文
+        5. 使用material_to_document_agent工具将实验数据和图表转换为论文
         6. 使用judge_agent工具判断论文是否符合要求
         7. 使用final_output工具输出自己已经完成任务的情况
         如果用户不是传统的学术论文写作需求（一般来说报告类需求最好有丰富好看的图表），你应该自己编排选择合适的工具完成,基于你的经验和任务难度，有时候并不是所有任务都要用到上述所有智能体功能。你作为直接和用户接触的 agent，还可能遇到基于历史任务和文件空间的单纯的聊天，询问等需求，使用human_in_loop工具和用户进行对话交互。

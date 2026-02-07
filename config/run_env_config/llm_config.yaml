@@ -1,9 +1,8 @@
 temperature: 0
 max_tokens: 0
-max_context_window: 300000
+max_context_window: 500000
 base_url: https://openrouter.ai/api/v1
 api_key: 
-# 超时配置（秒）
 timeout: 600              # LiteLLM 原生：建立连接及整体响应的最大等待时间 
 stream_timeout: 30        # LiteLLM 原生：两个流式数据块之间的最大间隔时间
 first_chunk_timeout: 30   # 应用层强制：连接建立+首包接收的最大时间（防止连接池死锁）
@@ -15,6 +14,14 @@ compressor_models:
 - openai/google/gemini-3-flash-preview
 read_figure_models:
 - openai/google/gemini-3-flash-preview
+thinking_models:
+- openai/google/gemini-3-flash-preview    # thinking agent 专用模型
+
+# 多模态配置
+multimodal: true           # 主模型（models）+ thinking agent 是否支持多模态图片嵌入
+compressor_multimodal: true   # 压缩模型（compressor_models）是否支持多模态图片嵌入
+
+
 
 
 

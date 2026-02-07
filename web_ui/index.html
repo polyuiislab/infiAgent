@@ -20,6 +20,9 @@
                     <div class="control-group">
                         <label for="task-id">Task ID:</label>
                         <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <select id="agent-system-select" class="btn-secondary" title="Select Agent System" style="min-width: 120px;">
+                                <option value="Default">Default</option>
+                            </select>
                             <button id="agent-select-btn" class="btn-secondary" title="Select Agent" style="min-width: 150px; white-space: nowrap;">
                                 <i class="fas fa-robot"></i> <span id="agent-select-text">alpha_agent</span>
                             </button>
@@ -28,6 +31,7 @@
                             </select>
                             <input type="text" id="task-id" placeholder="task_name" value="" style="flex: 1;">
                             <button id="confirm-task-btn" class="btn-primary">Confirm</button>
+                            <button id="resume-task-btn" class="btn-secondary" title="Resume interrupted task"><i class="fas fa-play-circle"></i> Resume</button>
                             <button id="clear-task-btn" class="btn-danger">Clear Task</button>
                             <button id="copy-task-btn" class="btn-secondary">Copy Task</button>
                             <button id="download-task-btn" class="btn-secondary">Download Task</button>

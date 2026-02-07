@@ -39,7 +39,8 @@ class ConversationStorage:
                     latest_thinking: str = "", first_thinking_done: bool = False,
                     tool_call_counter: int = 0, system_prompt: str = "",
                     action_history_fact: List[Dict] = None,
-                    pending_tools: List[Dict] = None):
+                    pending_tools: List[Dict] = None,
+                    llm_turn_counter: int = 0):
         """
         保存动作历史和完整状态
         
@@ -48,12 +49,16 @@ class ConversationStorage:
             agent_id: Agent ID
             agent_name: Agent名称
             task_input: 任务输入
-            action_history: 动作历史列表
-            current_turn: 当前轮次
+            action_history: 动作历史列表（含新字段：_turn, tool_call_id, assistant_content, 
+                           _has_image, _image_base64 等）
+            current_turn: 当前执行轮次
             latest_thinking: 最新的thinking内容
             first_thinking_done: 是否已完成首次thinking
             tool_call_counter: 工具调用计数
-            system_prompt: 完整的system_prompt（包含XML上下文）
+            system_prompt: 完整的system_prompt（包含XML上下文，用于调试参考）
+            action_history_fact: 完整动作轨迹（不含 base64 图片数据）
+            pending_tools: 待执行的工具列表
+            llm_turn_counter: LLM 调用轮次计数器（用于消息分组）
         """
         try:
             filepath = self._generate_filename(task_id, agent_id)
@@ -64,20 +69,19 @@ class ConversationStorage:
                 "agent_name": agent_name,
                 "task_input": task_input,
                 "current_turn": current_turn,
-                "action_history": action_history,  # 用于渲染（会压缩）
-                "action_history_fact": action_history_fact if action_history_fact else action_history,  # 完整轨迹
-                "pending_tools": pending_tools if pending_tools else [],  # 待执行的工具
+                "action_history": action_history,  # 含 base64 图片数据（用于 messages 重建）
+                "action_history_fact": action_history_fact if action_history_fact else action_history,  # 完整轨迹（不含 base64）
+                "pending_tools": pending_tools if pending_tools else [],
                 "latest_thinking": latest_thinking,
                 "first_thinking_done": first_thinking_done,
                 "tool_call_counter": tool_call_counter,
+                "llm_turn_counter": llm_turn_counter,
                 "system_prompt": system_prompt,
                 "last_updated": datetime.now().isoformat()
             }
             
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            
-            # print(f"💾 已保存状态: 第{current_turn}轮, {len(action_history)}个动作")
         
         except Exception as e:
             print(f"⚠️ 保存对话历史失败: {e}")

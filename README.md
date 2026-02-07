@@ -41,7 +41,15 @@ The default configuration in this repository is a **research-oriented semi-speci
 
 If you pulled the image or code before the latest update date, please refer to the issues that have been fixed and, based on your needs, pull the image and code again.
 
-- [2026/01/17] We introduce a new configuration profile, Open Cowork, which delivers a computer-work assistant similar to Anthropic's Cowork. After entering a user-specified working directory, the assistant can perform a wide range of tasks, including but not limited to: organizing folders, creating PowerPoint presentations, processing and categorizing bills and invoices in multiple formats, conducting in-depth research, and writing project code. The system is built on the InfiAgent architecture, preserving its long-horizon execution capabilities and unbounded, file-system–level memory within the same workspace. Currently, Open Cowork supports CLI and Docker-based CLI modes only. A demonstration video is available for more details.
+- [2026/02/07] **Agent Skills Support!** InfiAgent now supports the [Agent Skills open standard](https://agentskills.io/). Skills are folders of instructions, scripts, and resources that agents can dynamically load to improve performance on specialized tasks. Docker users: place skill folders in `~/.mla_v3/skills_library/` (mounted to `/root/mla_v3/skills_library/` inside the container). Local developers: place them in `~/mla_v3/skills_library/`. Windows users: `%USERPROFILE%\mla_v3\skills_library\`. The agent will automatically discover available skills and deploy them to the workspace on demand via `load_skill` tool.
+
+- [2026/02/07] **Multi-Provider Model Support!** You can now use models from different providers in the same configuration. Each model can optionally override `api_key` and `base_url` to use a different provider. Different sub-agents can use different models. See `llm_config.example.yaml` for configuration details.
+
+- [2026/02/07] **Web UI Enhancements:** Added Resume button for recovering interrupted tasks (same as CLI `/resume`). Added Agent System selector to freely switch between Default (academic research) and Open Cowork systems. User inputs now automatically include timestamps (consistent with CLI behavior).
+
+- [2026/02/07] **Multimodal Message Architecture:** Separated multimodal and text-only message logic. For multimodal models, images from `image_read` are embedded directly in the conversation context for native understanding. Text-only models retain the external vision tool approach. Configure via `multimodal` and `compressor_multimodal` in `llm_config.yaml`.
+
+- [2026/01/17] We introduce a new configuration profile, Open Cowork, which delivers a computer-work assistant similar to Anthropic's Cowork. After entering a user-specified working directory, the assistant can perform a wide range of tasks, including but not limited to: organizing folders, creating PowerPoint presentations, processing and categorizing bills and invoices in multiple formats, conducting in-depth research, and writing project code. The system is built on the InfiAgent architecture, preserving its long-horizon execution capabilities and unbounded, file-system–level memory within the same workspace. Open Cowork supports CLI, Docker-based CLI, and Web UI modes. In Web UI, use the Agent System selector to switch between Default and OpenCowork. A demonstration video is available for more details.
 
 **Open Cowork Demo Videos:**
 
@@ -479,18 +487,33 @@ config/
 #### 1. `llm_config.yaml` - LLM Configuration
 
 ```yaml
+# Global defaults
 api_key: "your-api-key"
 base_url: "https://openrouter.ai/api/v1"
+temperature: 0
+max_tokens: 0
+
 models:
-  - "openai/anthropic/claude-sonnet-4"
-  - "openai/anthropic/claude-haiku-4.5"
-temperature: 0.7
-max_tokens: 8000
+  - openai/google/gemini-3-flash-preview     # uses global api_key + base_url
+  - name: openai/qwen-plus                    # override with different provider
+    api_key: "your-dashscope-key"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
 figure_models:
-  - "google/gemini-2.0-flash-thinking-exp-01-21"
+  - openai/google/gemini-3-flash-preview
+compressor_models:
+  - openai/google/gemini-3-flash-preview
+thinking_models:
+  - openai/google/gemini-3-flash-preview
+read_figure_models:
+  - openai/google/gemini-3-flash-preview
+
+# Multimodal configuration
+multimodal: true              # Enable image embedding in messages for main model
+compressor_multimodal: true   # Enable image embedding for compressor model
 ```
 
-**Note**: Copy `llm_config.example.yaml` to `llm_config.yaml` to get started.
+**Note**: Copy `llm_config.example.yaml` to `llm_config.yaml` to get started. Each model can optionally override `api_key` and `base_url` to use a different provider.
 
 #### 2. Agent Hierarchy
 

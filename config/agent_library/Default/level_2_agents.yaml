@@ -109,7 +109,7 @@ tools:
       - file_read
       - dir_list
       - answer_from_papers
-      - vision_tool
+      - image_read
       - file_write
       - reference_list
       - reference_add
@@ -283,11 +283,13 @@ tools:
       - dir_list
       - dir_create
       - file_move
+      - create_figures_agent
       - move_data_to_clean_directory
       - reference_list
       - reference_add
       - reference_delete
       - final_output
+      - proof_agent
     max_turns: 100
     model_type: claude-3-7-sonnet-20250219
     prompts:
@@ -304,6 +306,7 @@ tools:
           3. 第一步，你应该根据大致的图的结果说明（通过读取相关文字材料），实验计划和idea内容，拟定一个标题和文章大纲。
           4. 根据你拟定的标题和文章大概在指定工作目录下创建 main.tex文件和 bib 文件（先为空）。main.tex文件包含你拟定的大纲，切记所有写作都是使用英文。作者为polyu AI Researcher或者根据用户需求而定。大纲应该完全按照学术论文的标准进行，而且通过引入一些之后要写的 tex 文件来构造整个文件，例如 abstract.tex, introduction.tex, related_work.tex等等。
           5. 每次完成sub_tex前，使用 dir_list工具和file_read工具观察文章所需要的章节，和已经完成的章节。调用sub_part_editor_agent工具完成剩下的 sub_tex，你应该有计划的完成例如 introduction 和 abstract 部分应该放在最后因为这两个要基于剩下的部分才能完成，告诉工具你要完成的部分，已经完成的部分，和文件夹中所有材料的地址，以及参考文献，并且你的大纲和思路。对于每个部分记得重点强调不同的要求，例如方法说明部分如果实验有代码，应该在该节包含伪代码，如果已经提供了框架图，也需要包含框架图这都是必须要明确要求的。
+          6. 使用proof_agent工具对文章进行润色，修改和语法纠正。
           **注意事项:**
           1. 重要：注意写作顺序，严格按照指令执行！不要自己完成所有写作，交给工具完成 sub_tex 的写作！！！！
           2. 你应该告诉sub_part_editor_agent应该在什么位置生成tex 文件，防止文件地方出错！
