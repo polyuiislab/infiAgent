@@ -43,7 +43,15 @@
 
 如果你在最新更新日期前拉取镜像或者代码，请参考修复的问题，重新拉取镜像和代码。
 
-- [2026/01/17] 我们推出新的配置文件open cowork，得到类似anthropic 公司 cowork 工具的电脑工作助手。在进入你指定的文件夹后，实现包括但不限于帮你整理文件夹，制作 ppt，整理各种格式的账单发票，深度调研，编写项目代码等。仍然基于 infiagent 架构的长程性能，和相同文件夹下的无限记忆。目前仅支持 cli 和 docker cli 模式。具体可查看演示视频。
+- [2026/02/07] **支持 Agent Skills！** InfiAgent 现已支持 [Agent Skills 开放标准](https://agentskills.io/)。Skills 是包含指令、脚本和资源的文件夹，智能体可按需加载以增强专业任务能力。Docker 用户：将 skill 文件夹放入 `~/.mla_v3/skills_library/`（挂载到容器内 `/root/mla_v3/skills_library/`）。本地开发者：放入 `~/mla_v3/skills_library/`。Windows 用户：`%USERPROFILE%\mla_v3\skills_library\`。智能体会自动发现可用 skills 并通过 `load_skill` 工具按需部署到工作空间。
+
+- [2026/02/07] **支持多供应商模型！** 同一配置文件中可以使用来自不同供应商的模型。每个模型可单独覆盖 `api_key` 和 `base_url`，允许不同子智能体使用不同模型。详见 `llm_config.example.yaml` 配置示例。
+
+- [2026/02/07] **Web UI 增强：** 新增 Resume 按钮，支持恢复中断任务（与 CLI `/resume` 功能一致）。新增 Agent System 选择器，可自由切换 Default（学术研究智能体）和 Open Cowork 系统。用户输入自动添加时间戳（与 CLI 行为一致）。
+
+- [2026/02/07] **多模态消息架构重构：** 分离多模态和纯文本模型的消息逻辑。多模态模型下，`image_read` 工具获取的图片直接嵌入对话上下文，实现原生图片理解。纯文本模型仍保留外部 Vision 工具的图片识别能力。通过 `llm_config.yaml` 中的 `multimodal` 和 `compressor_multimodal` 配置。
+
+- [2026/01/17] 我们推出新的配置文件open cowork，得到类似anthropic 公司 cowork 工具的电脑工作助手。在进入你指定的文件夹后，实现包括但不限于帮你整理文件夹，制作 ppt，整理各种格式的账单发票，深度调研，编写项目代码等。仍然基于 infiagent 架构的长程性能，和相同文件夹下的无限记忆。支持 CLI、Docker CLI 和 Web UI 模式。在 Web UI 中可通过 Agent System 选择器切换 Default 和 OpenCowork。具体可查看演示视频。
 
 **Open Cowork 演示视频：**
 

@@ -1051,6 +1051,84 @@ def get_agents():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/agent-systems', methods=['GET'])
+@login_required
+def get_agent_systems():
+    """List all available agent systems (subdirectories under config/agent_library/)"""
+    try:
+        agent_library_dir = project_root / "config" / "agent_library"
+        systems = []
+        if agent_library_dir.exists():
+            for d in sorted(agent_library_dir.iterdir()):
+                if d.is_dir() and not d.name.startswith('.'):
+                    systems.append(d.name)
+        return jsonify({"systems": systems})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/resume/check', methods=['GET'])
+@login_required
+def check_resume():
+    """Check if there's an interrupted task that can be resumed"""
+    try:
+        username = session.get('username')
+        if not username:
+            return jsonify({"error": "User not authenticated"}), 401
+        
+        task_id_input = request.args.get('task_id', '')
+        if not task_id_input:
+            return jsonify({"found": False, "message": "Missing task_id parameter"})
+        
+        # Normalize task path
+        try:
+            task_path, _ = normalize_task_id(task_id_input, username)
+            task_id = str(task_path)
+        except ValueError as e:
+            return jsonify({"found": False, "message": str(e)})
+        
+        import hashlib
+        
+        # Calculate task hash (same logic as hierarchy_manager and cli_mode)
+        task_hash = hashlib.md5(task_id.encode()).hexdigest()[:8]
+        task_folder = Path(task_id).name if (os.sep in task_id or '/' in task_id or '\\' in task_id) else task_id
+        task_name = f"{task_hash}_{task_folder}"
+        
+        # Stack file location
+        conversations_dir = Path.home() / "mla_v3" / "conversations"
+        stack_file = conversations_dir / f"{task_name}_stack.json"
+        
+        if not stack_file.exists():
+            return jsonify({"found": False, "message": "No interrupted task found"})
+        
+        # Read stack
+        with open(stack_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            stack = data.get("stack", [])
+        
+        if not stack:
+            return jsonify({"found": False, "message": "Stack is empty"})
+        
+        # Get bottom task (original user input)
+        bottom_task = stack[0]
+        agent_name = bottom_task.get("agent_name")
+        user_input = bottom_task.get("user_input")
+        
+        if not agent_name or not user_input:
+            return jsonify({"found": False, "message": "Task data incomplete"})
+        
+        return jsonify({
+            "found": True,
+            "agent_name": agent_name,
+            "user_input": user_input,
+            "interrupted_at": bottom_task.get("start_time", "unknown"),
+            "stack_depth": len(stack)
+        })
+    
+    except Exception as e:
+        return jsonify({"found": False, "message": str(e)})
+
+
 @app.route('/api/status', methods=['GET'])
 @login_required
 def get_status():
@@ -2294,16 +2372,17 @@ def list_config_files():
         # Get config type from query parameter (run_env or agent)
         config_type = request.args.get('type', 'run_env')
         
+        agent_system = request.args.get('agent_system', 'Default')
+        
         if config_type == 'run_env':
             config_dir = project_root / "config" / "run_env_config"
         elif config_type == 'agent':
-            # Default to Default system, can be extended to support other systems
-            config_dir = project_root / "config" / "agent_library" / "Default"
+            config_dir = project_root / "config" / "agent_library" / agent_system
         else:
             return jsonify({"error": "Invalid config type. Use 'run_env' or 'agent'"}), 400
         
         if not config_dir.exists():
-            return jsonify({"error": "Config directory not found"}), 404
+            return jsonify({"error": f"Config directory not found: {agent_system}"}), 404
         
         # List all YAML files in config directory
         config_files = []
@@ -2335,6 +2414,7 @@ def read_config_file():
         
         filename = request.args.get('file', '')
         config_type = request.args.get('type', 'run_env')
+        agent_system = request.args.get('agent_system', 'Default')
         
         if not filename:
             return jsonify({"error": "Missing file parameter"}), 400
@@ -2347,7 +2427,7 @@ def read_config_file():
         if config_type == 'run_env':
             config_dir = project_root / "config" / "run_env_config"
         elif config_type == 'agent':
-            config_dir = project_root / "config" / "agent_library" / "Default"
+            config_dir = project_root / "config" / "agent_library" / agent_system
         else:
             return jsonify({"error": "Invalid config type"}), 400
         
@@ -2395,12 +2475,13 @@ def get_agent_tree():
         if not username:
             return jsonify({"error": "User not authenticated"}), 401
         
-        # Get optional root_agent parameter
+        # Get optional root_agent and agent_system parameters
         root_agent = request.args.get('root_agent', None)
+        agent_system = request.args.get('agent_system', 'Default')
         
         # Load agent configurations
         from utils.config_loader import ConfigLoader
-        config_loader = ConfigLoader('Default')
+        config_loader = ConfigLoader(agent_system)
         
         # Build agent tree
         all_agents = {}
@@ -2531,6 +2612,7 @@ def save_config_file():
         filename = data.get('file', '')
         content = data.get('content', '')
         config_type = data.get('type', 'run_env')
+        agent_system = data.get('agent_system', 'Default')
         
         if not filename:
             return jsonify({"error": "Missing file parameter"}), 400
@@ -2543,7 +2625,7 @@ def save_config_file():
         if config_type == 'run_env':
             config_dir = project_root / "config" / "run_env_config"
         elif config_type == 'agent':
-            config_dir = project_root / "config" / "agent_library" / "Default"
+            config_dir = project_root / "config" / "agent_library" / agent_system
         else:
             return jsonify({"error": "Invalid config type"}), 400
         

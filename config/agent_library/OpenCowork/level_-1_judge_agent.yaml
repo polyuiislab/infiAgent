@@ -3,7 +3,6 @@ tools:
     level: -1
     type: llm_call_agent
     available_tools:
-      # - summary_from_papers
       - dir_list
       - file_read
       - final_output
