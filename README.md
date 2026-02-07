@@ -22,20 +22,10 @@
 
 ### Key Features
 
-- ✅ **Unlimited Runtime**: No degradation from context accumulation
-- ✅ **Multi-Level Agent Hierarchy**: Serial execution with tree-structured agent orchestration
-- ✅ **Zero Context Compression**: File-based state management eliminates the need for context compression
-- ✅ **Task Memory**: Persistent memory across sessions using workspace as task ID
-- ✅ **Complete Research Workflows**: From literature search to experiments, plotting, and LaTeX papers
-
-### Default Configuration
-
-The default configuration in this repository is a **research-oriented semi-specialized agent** capable of:
-
-- 📝 **Academic Paper Writing**: Complete end-to-end workflow from research to LaTeX submission
-- ✅ **Human-Level Quality**: Papers can pass EI/IEEE conference peer reviews
-- 🧪 **Scientific Computing**: ECM protein simulation, logistics scheduling, assignment grading, etc.
-- 🔬 **Full Research Pipeline**: Literature collection, experiments, figures, and paper drafting
+- ✅ **Days-Long Complex Tasks**: Supports continuous execution over days without context accumulation or compression degradation. Any interruption (crash, network error, manual stop) can be fully recovered via Resume — true breakpoint continuation.
+- ✅ **Agent Skills Standard**: Compatible with the [Agent Skills open standard](https://agentskills.io/). Drop skill folders into the skills library and agents will discover, load, and execute them on demand.
+- ✅ **Flexible Agent Architecture**: Supports both **multi-level hierarchy** (tree-structured orchestration for complex domain tasks — e.g., the Default config enables long-running scientific research with paper generation) and **flat architecture** (single agent with one sub-agent + Skills for broad general-purpose tasks — e.g., the OpenCowork config).
+- ✅ **Persistent Memory**: File-directory-based memory system. Launch agents in the same workspace directory and they remember all historical tasks across sessions — no external database required.
 
 ### Update & News🔥
 
