@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Agent执行器 - 使用XML结构化上下文的核心执行逻辑
+Agent执行器 - 使用标准消息格式的核心执行逻辑
+历史动作通过 messages 数组传递（而非 system_prompt），支持多模态图片嵌入
 """
 from typing import Dict, List
 import sys
+import json
 import traceback
+from collections import OrderedDict
 
 # Windows兼容性：设置UTF-8编码
 try:
@@ -93,6 +96,7 @@ class AgentExecutor:
         self.first_thinking_done = False
         self.thinking_interval = 10  # 每10轮工具调用触发一次thinking
         self.tool_call_counter = 0
+        self.llm_turn_counter = 0  # LLM调用轮次计数器（用于消息分组）
 
     def _setup_event_emitter(self):
         """初始化事件发射器并注册处理器"""
@@ -153,18 +157,21 @@ class AgentExecutor:
                 # 检查并压缩历史动作（如果超过限制）
                 self._compress_action_history_if_needed()
 
-                # 构建完整的系统提示词（包含通用prompts + 动态上下文）
+                # 构建系统提示词（不含历史动作，历史动作改由 messages 承载）
                 full_system_prompt = self.context_builder.build_context(
-                    task_id,  # 添加task_id参数
+                    task_id,
                     self.agent_id,
                     self.agent_name,
                     user_input,
-                    action_history=self.action_history  # 传入当前的动作历史
+                    action_history=self.action_history,
+                    include_action_history=False  # 历史动作通过 messages 传递
                 )
                 
-                # 调用LLM（history永远只有一条）
-                #history = [ChatMessage(role="user", content="请输出下一个动作")]
-                llm_response = self._execute_llm_call(full_system_prompt)
+                # 从 action_history 构建标准 messages 数组
+                messages = self._build_messages_from_action_history()
+                
+                # 调用LLM（使用标准 messages 格式）
+                llm_response = self._execute_llm_call(full_system_prompt, messages)
                 
                 if llm_response.status != "success":
                     error_result = {
@@ -186,13 +193,16 @@ class AgentExecutor:
                             style='warning'
                         ))
                         self.action_history.append({
+                            "_turn": self.llm_turn_counter,
                             "tool_name": "_no_tool_call",
                             "arguments": {},
                             "result": {
                                 "status": "error",
                                 "output": f"第{max_tool_try}次：LLM未调用工具，请在下一轮中必须调用工具"
-                            }
+                            },
+                            "assistant_content": llm_response.output or ""
                         })
+                        self.llm_turn_counter += 1
                         self._save_state(task_id, user_input, turn)
                         continue
                     else:
@@ -216,22 +226,38 @@ class AgentExecutor:
                 # 重置计数器（成功调用了工具）
                 max_tool_try = 0
 
+                # 提取本轮 LLM 输出的文本内容和推理内容（所有 tool_call 共享）
+                current_assistant_content = llm_response.output or ""
+                current_reasoning_content = llm_response.reasoning_content or ""
+                current_llm_turn = self.llm_turn_counter
+
                 # 执行所有工具调用
                 for tool_call in llm_response.tool_calls:
-                    final_output_result = self._execute_tool_call(tool_call, task_id, user_input, turn)
+                    final_output_result = self._execute_tool_call(
+                        tool_call, task_id, user_input, turn,
+                        assistant_content=current_assistant_content,
+                        reasoning_content=current_reasoning_content,
+                        llm_turn=current_llm_turn
+                    )
                     if final_output_result:
                         self.event_emitter.dispatch(AgentEndEvent(status='success', result=final_output_result))
                         self.hierarchy_manager.pop_agent(self.agent_id, final_output_result.get("output", ""))
                         return final_output_result
                 
+                self.llm_turn_counter += 1
+                
                 # 检查是否该触发thinking（每N轮工具调用）
-                if self.tool_call_counter > 0 and self.tool_call_counter % self.thinking_interval == 0:
+                # 用整除判断是否跨过了 thinking_interval 边界（避免多 tool_call 跳过边界值）
+                counter_before = self.tool_call_counter - len(llm_response.tool_calls)
+                crossed_boundary = (counter_before // self.thinking_interval) < (self.tool_call_counter // self.thinking_interval)
+                if self.tool_call_counter > 0 and crossed_boundary:
                     thinking_result = self._trigger_thinking(task_id, user_input, is_initial=False)
                     if thinking_result:
                         self.latest_thinking = thinking_result
                         self.hierarchy_manager.update_thinking(self.agent_id, thinking_result)
                         self._save_state(task_id, user_input, turn)
                         self.action_history = []
+                        self.llm_turn_counter = 0  # 重置轮次计数器
             
             except Exception as e:
                 self._handle_execution_error(e)
@@ -260,6 +286,7 @@ class AgentExecutor:
             self.latest_thinking = loaded_data.get("latest_thinking", "")
             self.first_thinking_done = loaded_data.get("first_thinking_done", False)
             self.tool_call_counter = loaded_data.get("tool_call_counter", 0)
+            self.llm_turn_counter = loaded_data.get("llm_turn_counter", 0)
             start_turn = loaded_data.get("current_turn", 0) + 1
             
             self.event_emitter.dispatch(HistoryLoadEvent(
@@ -285,10 +312,154 @@ class AgentExecutor:
 
         return start_turn
 
-    def _execute_llm_call(self, system_prompt: str):
-        """执行LLM调用并分发事件"""
+    def _build_messages_from_action_history(self) -> List[Dict]:
+        """
+        从 action_history 动态重建 OpenAI 标准格式的 messages 数组
+        
+        支持三种 action 类型：
+        1. _historical_summary → user 消息（压缩后的历史摘要）
+        2. _no_tool_call → assistant 消息（纯文本）+ user 消息（提醒）
+        3. 普通 action → 按 _turn 分组为 assistant(tool_calls) + tool(results) + user(images)
+        
+        Returns:
+            OpenAI 格式的 messages 列表
+        """
+        # 初始 user 消息
+        messages = [{
+            "role": "user", 
+            "content": "请根据当前任务和上下文，执行下一步操作。请调用合适的工具来完成任务。不要重复已执行的动作！"
+        }]
+        
+        if not self.action_history:
+            return messages
+        
+        # 按 _turn 分组普通 action
+        turns = OrderedDict()
+        
+        for action in self.action_history:
+            tool_name = action.get("tool_name", "")
+            
+            # 特殊处理：历史摘要（压缩产物）
+            if tool_name == "_historical_summary":
+                messages.append({
+                    "role": "user",
+                    "content": f"[Previous actions summary]\n{action['result']['output']}"
+                })
+                continue
+            
+            # 特殊处理：LLM 未调用工具
+            if tool_name == "_no_tool_call":
+                assistant_content = action.get("assistant_content", "")
+                if assistant_content:
+                    messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({
+                    "role": "user",
+                    "content": action["result"].get("output", "请调用工具")
+                })
+                continue
+            
+            # 普通 action - 按 _turn 分组
+            turn = action.get("_turn", 0)  # 向后兼容：旧记录默认 turn=0
+            
+            if turn not in turns:
+                turns[turn] = {
+                    "assistant_content": action.get("assistant_content", ""),
+                    "reasoning_content": action.get("reasoning_content", ""),
+                    "tool_calls": [],
+                    "tool_results": [],
+                    "images": []
+                }
+            
+            # 构建 tool_call 条目
+            tool_call_id = action.get("tool_call_id", f"call_{turn}_{len(turns[turn]['tool_calls'])}")
+            turns[turn]["tool_calls"].append({
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": action["tool_name"],
+                    "arguments": json.dumps(action["arguments"], ensure_ascii=False)
+                }
+            })
+            
+            # 构建 tool result 消息
+            has_image = action.get("_has_image", False)
+            has_base64 = bool(action.get("_image_base64"))
+            
+            if has_image and has_base64:
+                # 有图片且有 base64 数据 → tool result 简短说明，图片在后续 user 消息中嵌入
+                result_content = "Image loaded successfully. See below."
+            else:
+                # 无图片 或 有图片标记但 base64 丢失（Ctrl+C 恢复场景）→ 正常 JSON 结果
+                # 排除 _image_base64 等内部字段
+                result_clean = {k: v for k, v in action.get("result", {}).items() 
+                               if not k.startswith("_")}
+                result_content = json.dumps(result_clean, ensure_ascii=False)
+            
+            turns[turn]["tool_results"].append({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": result_content
+            })
+            
+            # 收集图片数据（方案二：后续 user 消息嵌入）
+            # 只有同时有 _has_image 标记和实际 base64 数据时才嵌入图片
+            if has_image and has_base64:
+                query = action.get("arguments", {}).get("query", "请分析这些图片")
+                img_data = action["_image_base64"]
+                # 兼容列表和单值
+                if isinstance(img_data, list):
+                    base64_list = img_data
+                else:
+                    base64_list = [img_data]
+                turns[turn]["images"].append({
+                    "base64_list": base64_list,
+                    "query": query
+                })
+        
+        # 从分组数据构建 messages
+        for turn_num in sorted(turns.keys()):
+            turn_data = turns[turn_num]
+            
+            # assistant 消息（包含 content、tool_calls、reasoning_content）
+            assistant_msg = {
+                "role": "assistant",
+                "content": turn_data["assistant_content"] or None,
+                "tool_calls": turn_data["tool_calls"]
+            }
+            # 如果有 reasoning_content，添加到 assistant 消息中
+            # LiteLLM 会将其传递给支持 thinking 的模型（如 Anthropic Claude）
+            if turn_data.get("reasoning_content"):
+                assistant_msg["reasoning_content"] = turn_data["reasoning_content"]
+            messages.append(assistant_msg)
+            
+            # tool result 消息（每个 tool_call 对应一个）
+            messages.extend(turn_data["tool_results"])
+            
+            # 图片消息（方案二：跟在 tool result 后面的 user 消息，多张图合并到一条消息）
+            for img_group in turn_data["images"]:
+                content_parts = []
+                for b64 in img_group["base64_list"]:
+                    image_url = b64 if b64.startswith("data:") else f"data:image/jpeg;base64,{b64}"
+                    content_parts.append({"type": "image_url", "image_url": {"url": image_url}})
+                content_parts.append({
+                    "type": "text",
+                    "text": f"上面是 image_read 获取的 {len(img_group['base64_list'])} 张图片。Agent 的问题是: {img_group['query']}"
+                })
+                messages.append({"role": "user", "content": content_parts})
+        
+        return messages
 
-        history = [ChatMessage(role="user", content="<历史动作>是你之前已经执行的动作，不要重复<历史动作>内的动作！！请输出下一个动作")]
+    def _execute_llm_call(self, system_prompt: str, messages: List[Dict] = None):
+        """
+        执行LLM调用并分发事件
+        
+        Args:
+            system_prompt: 系统提示词（不含历史动作）
+            messages: OpenAI 标准格式的 messages 数组（包含历史动作）
+        """
+        if messages is None:
+            # 向后兼容：如果没有传 messages，使用简单的 user 消息
+            messages = [{"role": "user", "content": "请输出下一个动作"}]
         
         # 发送LLM调用开始事件
         self.event_emitter.dispatch(LlmCallStartEvent(
@@ -298,7 +469,7 @@ class AgentExecutor:
         
         # 调用LLM（重试机制已在 llm_client 内部实现）
         llm_response = self.llm_client.chat(
-            history=history,
+            history=messages,
             model=self.model_type,
             system_prompt=system_prompt,
             tool_list=self.available_tools,
@@ -311,8 +482,21 @@ class AgentExecutor:
         ))
         return llm_response
 
-    def _execute_tool_call(self, tool_call: Dict, task_id: str, user_input: str, turn: int) -> Dict:
-        """执行单个工具调用并分发事件"""
+    def _execute_tool_call(self, tool_call: Dict, task_id: str, user_input: str, turn: int,
+                          assistant_content: str = "", reasoning_content: str = "",
+                          llm_turn: int = 0) -> Dict:
+        """
+        执行单个工具调用并分发事件
+        
+        Args:
+            tool_call: 工具调用对象（包含 id, name, arguments）
+            task_id: 任务ID
+            user_input: 用户输入
+            turn: 当前执行轮次
+            assistant_content: 该轮 LLM 响应的文本内容（同轮所有 tool_call 共享）
+            reasoning_content: 该轮 LLM 响应的推理/思考内容（同轮所有 tool_call 共享）
+            llm_turn: LLM 调用轮次（用于消息分组）
+        """
         # ✅ 在保存 pending 之前，为 level != 0 的工具添加 uuid
         arguments_with_uuid = self._add_uuid_if_needed(tool_call.name, tool_call.arguments)
         
@@ -349,20 +533,77 @@ class AgentExecutor:
             result=tool_result
         ))
 
-        # 记录动作到历史（使用带 uuid 的参数）
+        # 记录动作到历史（增强格式：包含消息重建所需的字段）
         action_record = {
+            "_turn": llm_turn,
+            "tool_call_id": tool_call.id,
             "tool_name": tool_call.name,
             "arguments": arguments_with_uuid,
-            "result": tool_result
+            "result": tool_result,
+            "assistant_content": assistant_content,
+            "reasoning_content": reasoning_content,  # 模型的推理/思考内容
+            "_has_image": False,
+            "_image_base64": None
         }
         
-        # 添加到完整轨迹（永不压缩）
-        self.action_history_fact.append(action_record)
+        # 处理 image_read 工具返回（无论 multimodal 设置如何，都要清理 base64）
+        if tool_call.name == "image_read":
+            image_base64_list = None
+            
+            # ToolServer 的 _call_toolserver 会把工具返回值 json.dumps 到 output 字符串中
+            # 所以 _image_base64_list 可能嵌套在 output 字符串里，需要解析提取
+            output_str = tool_result.get("output", "")
+            if isinstance(output_str, str) and ("_image_base64_list" in output_str or "_image_base64" in output_str):
+                try:
+                    inner_result = json.loads(output_str)
+                    # 新格式：_image_base64_list（数组）
+                    image_base64_list = inner_result.get("_image_base64_list")
+                    # 兼容旧格式：_image_base64（单值）→ 转为列表
+                    if not image_base64_list:
+                        single = inner_result.get("_image_base64")
+                        if single:
+                            image_base64_list = [single]
+                    
+                    # 从 output 中移除所有 base64 数据
+                    inner_result.pop("_image_base64_list", None)
+                    inner_result.pop("_image_base64", None)
+                    inner_result.pop("_multimodal", None)
+                    tool_result["output"] = json.dumps(inner_result, indent=2, ensure_ascii=False)
+                    action_record["result"] = tool_result
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            # 也检查顶层（以防 ToolServer 未双重包装）
+            if not image_base64_list:
+                top_list = tool_result.get("_image_base64_list")
+                top_single = tool_result.get("_image_base64")
+                if top_list:
+                    image_base64_list = top_list
+                elif top_single:
+                    image_base64_list = [top_single]
+                tool_result.pop("_image_base64_list", None)
+                tool_result.pop("_image_base64", None)
+                tool_result.pop("_multimodal", None)
+                action_record["result"] = tool_result
+            
+            # 只有当主模型支持多模态时，才将图片嵌入 messages
+            if image_base64_list and self.llm_client.multimodal:
+                action_record["_has_image"] = True
+                action_record["_image_base64"] = image_base64_list  # 现在是列表
+        
+        # 添加到完整轨迹（永不压缩，但不存储 base64 以节省空间）
+        fact_record = {k: v for k, v in action_record.items() if k != "_image_base64"}
+        fact_record["_image_base64"] = None  # fact 中不保留 base64，仅记录 _has_image 标志
+        self.action_history_fact.append(fact_record)
 
-        # 添加到渲染历史（会被压缩）
+        # 添加到渲染历史（会被压缩，保留 base64 用于 messages 重建）
         self.action_history.append(action_record)
 
-        self.hierarchy_manager.add_action(self.agent_id, action_record)
+        self.hierarchy_manager.add_action(self.agent_id, {
+            "tool_name": tool_call.name,
+            "arguments": arguments_with_uuid,
+            "result": {k: v for k, v in tool_result.items() if not k.startswith("_")}
+        })
 
         # 工具执行后保存状态
         self._save_state(task_id, user_input, turn)
@@ -479,19 +720,22 @@ class AgentExecutor:
 
             thinking_agent = ThinkingAgent()
 
-            # 构建完整的系统提示词
+            # 构建完整的系统提示词（包含历史动作XML，供 thinking agent 分析）
             full_system_prompt = self.context_builder.build_context(
                 task_id,
                 self.agent_id,
                 self.agent_name,
                 task_input,
-                action_history=self.action_history
+                action_history=self.action_history,
+                include_action_history=True  # thinking agent 需要看到历史动作
             )
             result = thinking_agent.analyze_first_thinking(
                 task_description=task_input,
                 agent_system_prompt=full_system_prompt,
                 available_tools=self.available_tools,
-                tools_config=self.config_loader.all_tools
+                tools_config=self.config_loader.all_tools,
+                action_history=self.action_history,  # 传递 action_history（含图片数据）
+                multimodal=self.llm_client.multimodal  # 传递多模态标志
             )
             # 发送 thinking 事件（完整内容）
             self.event_emitter.dispatch(ThinkingEndEvent(
@@ -600,28 +844,30 @@ class AgentExecutor:
             user_input: 用户输入
             current_turn: 当前轮次
         """
-        # 构建完整的系统提示词（包含XML上下文）
+        # 构建完整的系统提示词（包含历史动作XML，用于调试/参考）
         full_system_prompt = self.context_builder.build_context(
-            task_id,  # 添加task_id参数
+            task_id,
             self.agent_id,
             self.agent_name,
             user_input,
-            action_history=self.action_history  # 传入动作历史
+            action_history=self.action_history,
+            include_action_history=True  # 保存时包含完整上下文
         )
 
-        # 保存状态（新格式）
+        # 保存状态
         self.conversation_storage.save_actions(
             task_id=task_id,
             agent_id=self.agent_id,
             agent_name=self.agent_name,
             task_input=user_input,
-            action_history=self.action_history,  # 渲染用（会压缩）
-            action_history_fact=self.action_history_fact,  # 完整轨迹（不压缩）
-            pending_tools=self.pending_tools,  # 待执行的工具
+            action_history=self.action_history,  # 渲染用（会压缩，含 base64）
+            action_history_fact=self.action_history_fact,  # 完整轨迹（不含 base64）
+            pending_tools=self.pending_tools,
             current_turn=current_turn,
             latest_thinking=self.latest_thinking,
             first_thinking_done=self.first_thinking_done,
             tool_call_counter=self.tool_call_counter,
+            llm_turn_counter=self.llm_turn_counter,
             system_prompt=full_system_prompt
         )
 

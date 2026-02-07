@@ -30,6 +30,13 @@ class ContextBuilder:
         self.llm_client = llm_client
         self.max_context_window = max_context_window
         
+        # 初始化 Skill 加载器
+        try:
+            from utils.skill_loader import get_skill_loader
+            self.skill_loader = get_skill_loader()
+        except Exception:
+            self.skill_loader = None
+        
         # 初始化tiktoken
         try:
             import tiktoken
@@ -38,7 +45,8 @@ class ContextBuilder:
             self.encoding = None
     
     def build_context(self, task_id: str, agent_id: str, agent_name: str, task_input: str, 
-                     action_history: List[Dict] = None) -> str:
+                     action_history: List[Dict] = None,
+                     include_action_history: bool = True) -> str:
         """
         构建完整的系统提示词（包含通用部分+动态上下文）
         
@@ -48,6 +56,9 @@ class ContextBuilder:
             agent_name: 当前Agent名称
             task_input: 当前Agent的任务输入
             action_history: 当前Agent的动作历史（可选，优先使用）
+            include_action_history: 是否在系统提示词中包含历史动作（默认True）
+                                   主LLM调用时传False（历史动作改由messages承载），
+                                   thinking/compression调用时传True（保持原有XML格式）
             
         Returns:
             完整的XML结构化上下文字符串（包含通用提示词）
@@ -68,7 +79,14 @@ class ContextBuilder:
         user_agent_history = self._build_user_agent_history(task_id, current)
         structured_call_info = self._build_structured_call_info(current, agent_id)
         current_thinking = self._build_current_thinking(task_id, agent_id, current)
-        action_history_xml = self._build_action_history(task_id, agent_id)
+        
+        # 2.5️⃣ 构建可用 skills 列表（如果有）
+        available_skills_xml = ""
+        if self.skill_loader:
+            try:
+                available_skills_xml = self.skill_loader.build_available_skills_xml()
+            except Exception:
+                pass
         
         # 3️⃣ 组装完整上下文（通用部分在最前面）
         full_context = f"""{general_system_prompt}
@@ -96,7 +114,16 @@ class ContextBuilder:
 <当前进度思考>
 {current_thinking}
 </当前进度思考>
-
+"""
+        
+        # 3.5️⃣ 可选：包含可用 skills（仅当有 skills 时）
+        if available_skills_xml:
+            full_context += f"\n{available_skills_xml}\n"
+        
+        # 4️⃣ 可选：包含历史动作（thinking/compression时包含，主LLM调用时不包含）
+        if include_action_history:
+            action_history_xml = self._build_action_history(task_id, agent_id)
+            full_context += f"""
 <历史动作>
 {action_history_xml}
 </历史动作>

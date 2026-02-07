@@ -20,7 +20,7 @@ from .arxiv_tools import ArxivSearchTool
 
 from .document_tools import ParseDocumentTool
 
-from .vision_tools import VisionTool, CreateImageTool
+from .vision_tools import VisionTool, ImageReadTool, CreateImageTool
 
 from .audio_tools import AudioTool
 
@@ -49,6 +49,8 @@ from .reference_tools import (
 )
 
 from .powerpoint_tools import ImagesToPptTool
+
+from .skill_tools import LoadSkillTool
 
 from .browser_tools import (
     BrowserLaunchTool,
@@ -84,6 +86,7 @@ __all__ = [
     "FileDownloadTool",
     "ParseDocumentTool",
     "VisionTool",
+    "ImageReadTool",
     "CreateImageTool",
     "AudioTool",
     "PaperAnalyzeTool",
@@ -117,5 +120,6 @@ __all__ = [
     "BrowserDragAndDropTool",
     "BrowserHoverTool",
     "BrowserScrollTool",
+    "LoadSkillTool",
 ]
 

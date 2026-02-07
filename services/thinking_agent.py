@@ -18,7 +18,7 @@ class ThinkingAgent:
         self.llm_client = SimpleLLMClient()
         
         # Thinking Agent的系统提示词
-        self.system_prompt = """你是一个agent行动的上下文管理专家，这个 agent 每次在清除动作历史之前会请你进行上下文整理。
+        self.system_prompt = f"""你是一个agent行动的上下文管理专家，这个 agent 每次在清除动作历史之前会请你进行上下文整理。
         上下文中包括你上次清理的成果在<当前进度思考>标签内。按照下面格式返回整理后的上下文，如果<当前进度思考>标签内没有内容证明是首次进行构造，你的输出不需要包含<当前进度思考>标签。你必须要考虑到十步后，历史动作会被立刻舍弃，因此
         你规划的<next_n_steps>必须足够具体，同时增量工作！
         '''例子‘’‘
@@ -75,7 +75,7 @@ class ThinkingAgent:
                  1.用户要求所有作图，写作必须英文。
                  2.目前依据实验大纲进行到第二步。具体步骤参考
             failed_time:
-                某项操作或子任务的失败次数统计，观察本轮操作，如果有新失败则增加条目，如果有前面刚失败的操作，增加失败次数，相同操作失败十次则重构提示，要求其向上报告。
+                某项操作或子任务的失败次数统计，观察本轮操作，如果有新失败则增加条目，如果有前面刚失败的操作，增加失败次数，相同操作失败十次则重构提示,final_output失败，要求其向上报告。
                 如果取得进展。则清空所有次数。
                 人机验证点击无反应：7
                 代码执行失败：5
@@ -84,6 +84,7 @@ class ThinkingAgent:
                 reference.bib:(给出一个样例，用于 append 增加新内容时格式对齐，任何 append 任务都应该给出样例用于后续的格式对齐)      
             </固化信息>
             <next_n_steps>
+            #如果正在执行某个 skill,请再下轮第一步再次读取 skill.md保证不迷失技能。
             #接下来10个步骤工具的使用计划说明（！！每个步骤是工具级的（除非特殊情况例如你保留了前一轮的一些关键信息再固化信息标签内，你可以说是参考固化信息中的什么内容作为某个步骤中的半个步骤，但是还是得有后续工具使用），不能笼统或者单个步骤复数使用工具），基于下面原则进行规划：
             #原则0：一轮动作必须或尽可能产生文件成果，例如修改文件
             #原则1： 获取要推进下一个 todo 或者任务的所有相关信息，固化为本地文件或找到所需内容的文件位置。如果之前十步已经获取到了，则跳过这个步骤。
@@ -92,16 +93,19 @@ class ThinkingAgent:
             #原则4： 验证，实验计划等文本内容无需验证，代码文件如果是可运行状态则可以使用运行工具进行验证。
             #禁止使用逐个，依次等笼统性描述。在你不知道对象名称时，你可以使用“使用 XX 工具解析按首字母排序的第一个文档”这种表述！
             例子：
-            1. 使用 answer_from_one_paper工具分析 XX9.pdf，并保存在XX.md文件。
-            2. 使用 file_read工具一次性复数读取所有相关文件（产生成果必须要知道的上下文）内容。
-            3. dir_list 确保要写入的 md 名称不冲突
-            4. file_write 写入xxx.md文件
-            5. final_out输出完成情况（完成则提前结束，无需十个）
+            1. 还在 skill_name 技能执行中，重新读取file_read  skills/sill_name/SKILL.md 保证不迷失技能。
+            2. 使用 answer_from_one_paper工具分析 XX9.pdf，并保存在XX.md文件。
+            3. 使用 file_read工具一次性复数读取所有相关文件（产生成果必须要知道的上下文）内容。
+            4. dir_list 确保要写入的 md 名称不冲突
+            5. file_write 写入xxx.md文件
+            6. final_out输出完成情况（完成则提前结束，无需十个）
             </next_n_steps>
         """
     
     def analyze_first_thinking(self, task_description: str, agent_system_prompt: str, 
-                               available_tools: List[str], tools_config: dict = None) -> str:
+                               available_tools: List[str], tools_config: dict = None,
+                               action_history: List[Dict] = None,
+                               multimodal: bool = False) -> str:
         """
         首次思考 - 初始规划
         
@@ -110,6 +114,8 @@ class ThinkingAgent:
             agent_system_prompt: Agent的系统提示词
             available_tools: 可用工具列表（名称）
             tools_config: 工具配置字典（可选，包含工具的详细信息）
+            action_history: 当前动作历史（可选，用于提取图片数据）
+            multimodal: 是否支持多模态（主模型 multimodal 配置）
             
         Returns:
             初始规划结果
@@ -127,16 +133,31 @@ agent可以调用的所有工具和参数信息
 如果是初始阶段，请你构造新的<当前进度思考>上下文，否则请你更新<当前进度思考>。只需要输出<当前进度思考>内的内容即可！
 """
 
-            #safe_print(analysis_request)           
-            history = [ChatMessage(role="user", content=analysis_request)]
+            # 构建 messages（支持多模态图片嵌入）
+            images = self._extract_images(action_history) if multimodal and action_history else []
+            
+            if images:
+                content_parts = [{"type": "text", "text": analysis_request}]
+                for img in images:
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": img["base64"] if img["base64"].startswith("data:") else f"data:image/jpeg;base64,{img['base64']}"}
+                    })
+                    content_parts.append({
+                        "type": "text",
+                        "text": f"(Image from {img['tool_name']}, query: {img.get('query', 'N/A')})"
+                    })
+                history = [{"role": "user", "content": content_parts}]
+            else:
+                history = [ChatMessage(role="user", content=analysis_request)]
             
             # 使用第一个可用模型，不使用工具
             response = self.llm_client.chat(
                 history=history,
-                model=self.llm_client.models[0],
+                model=self.llm_client.thinking_models[0],
                 system_prompt=self.system_prompt,
-                tool_list=[],  # 空列表表示不使用工具
-                tool_choice="none"  # 明确表示不调用工具
+                tool_list=[],
+                tool_choice="none"
             )
             
             if response.status == "success":
@@ -149,6 +170,32 @@ agent可以调用的所有工具和参数信息
             raise Exception(str(e))
             
             
+    
+    def _extract_images(self, action_history: List[Dict]) -> List[Dict]:
+        """
+        从 action_history 中提取所有图片数据
+        
+        Args:
+            action_history: 动作历史列表
+            
+        Returns:
+            [{base64: str, tool_name: str, query: str}] 图片列表（每张图一个条目）
+        """
+        images = []
+        if not action_history:
+            return images
+        for action in action_history:
+            if action.get("_has_image") and action.get("_image_base64"):
+                img_data = action["_image_base64"]
+                tool_name = action.get("tool_name", "image_read")
+                query = action.get("arguments", {}).get("query", "N/A")
+                # _image_base64 可能是列表或单值（兼容两种格式）
+                if isinstance(img_data, list):
+                    for b64 in img_data:
+                        images.append({"base64": b64, "tool_name": tool_name, "query": query})
+                else:
+                    images.append({"base64": img_data, "tool_name": tool_name, "query": query})
+        return images
     
     def _format_tools_info(self, available_tools: List[str], tools_config: dict = None) -> str:
         """
@@ -230,7 +277,7 @@ Agent的完整上下文（包含系统角色、历史动作等）：
             
             response = self.llm_client.chat(
                 history=history,
-                model=self.llm_client.models[0],
+                model=self.llm_client.thinking_models[0],
                 system_prompt=self.system_prompt,
                 tool_list=[],  # 空列表表示不使用工具
                 tool_choice="none"  # 明确表示不调用工具

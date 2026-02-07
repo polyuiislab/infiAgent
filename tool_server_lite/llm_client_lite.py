@@ -60,12 +60,27 @@ class LLMClientLite:
         # 读取配置
         self.base_url = self.config.get("base_url", "")
         self.api_key = self.config.get("api_key", "")
-        self.models = self.config.get("models", [])
-        self.figure_models = self.config.get("figure_models", [])
-        self.compressor_models = self.config.get("compressor_models", [])
-        self.read_figure_models = self.config.get("read_figure_models", [])
         self.temperature = self.config.get("temperature", 0)
         self.max_tokens = self.config.get("max_tokens", 0)
+        
+        # 解析模型配置（支持字符串和对象格式，对象格式可覆盖 api_key/base_url）
+        self.model_configs = {}  # 模型名称 -> {api_key?, base_url?, ...}
+        self.models = []
+        self.figure_models = []
+        self.compressor_models = []
+        self.read_figure_models = []
+        self._parse_models(self.config.get("models", []), self.models)
+        self._parse_models(self.config.get("figure_models", []), self.figure_models)
+        self._parse_models(self.config.get("compressor_models", []), self.compressor_models)
+        self._parse_models(self.config.get("read_figure_models", []), self.read_figure_models)
+        
+        # 回退逻辑：未配置的模型类别回退到 models
+        if not self.figure_models:
+            self.figure_models = list(self.models)
+        if not self.compressor_models:
+            self.compressor_models = list(self.models)
+        if not self.read_figure_models:
+            self.read_figure_models = list(self.models)
         
         if not self.api_key:
             raise ValueError("未配置API密钥")
@@ -78,6 +93,27 @@ class LLMClientLite:
         litellm.drop_params = True
         
         print(f"✅ LLM客户端配置已加载: {llm_config_path}")
+    
+    def _parse_models(self, models_config: list, target_list: list):
+        """解析模型配置，支持字符串和对象格式"""
+        for item in models_config:
+            if isinstance(item, str):
+                target_list.append(item)
+                if item not in self.model_configs:
+                    self.model_configs[item] = {}
+            elif isinstance(item, dict):
+                name = item.get("name")
+                if name:
+                    target_list.append(name)
+                    self.model_configs[name] = {k: v for k, v in item.items() if k != "name"}
+    
+    def _get_model_api_key(self, model: str) -> str:
+        """获取模型的 api_key（优先模型级别，回退全局）"""
+        return self.model_configs.get(model, {}).get("api_key", self.api_key)
+    
+    def _get_model_base_url(self, model: str) -> str:
+        """获取模型的 base_url（优先模型级别，回退全局）"""
+        return self.model_configs.get(model, {}).get("base_url", self.base_url)
     
     def reload_config(self):
         """
@@ -96,12 +132,19 @@ class LLMClientLite:
         # 更新配置
         self.base_url = self.config.get("base_url", "")
         self.api_key = self.config.get("api_key", "")
-        self.models = self.config.get("models", [])
-        self.figure_models = self.config.get("figure_models", [])
-        self.compressor_models = self.config.get("compressor_models", [])
-        self.read_figure_models = self.config.get("read_figure_models", [])
         self.temperature = self.config.get("temperature", 0)
         self.max_tokens = self.config.get("max_tokens", 0)
+        
+        # 重新解析模型配置
+        self.model_configs = {}
+        self.models = []
+        self.figure_models = []
+        self.compressor_models = []
+        self.read_figure_models = []
+        self._parse_models(self.config.get("models", []), self.models)
+        self._parse_models(self.config.get("figure_models", []), self.figure_models)
+        self._parse_models(self.config.get("compressor_models", []), self.compressor_models)
+        self._parse_models(self.config.get("read_figure_models", []), self.read_figure_models)
         
         if not self.api_key:
             raise ValueError("未配置API密钥")
@@ -179,8 +222,8 @@ class LLMClientLite:
                 model=model,
                 messages=messages,
                 temperature=self.temperature,
-                api_key=self.api_key,
-                api_base=self.base_url,
+                api_key=self._get_model_api_key(model),
+                api_base=self._get_model_base_url(model),
                 timeout=300  # 5分钟超时保护
             )
             
@@ -247,8 +290,8 @@ class LLMClientLite:
                 print(f"[INFO] 使用 OpenRouter 方式")
                 
                 client = OpenAI(
-                    base_url=self.base_url,
-                    api_key=self.api_key,
+                    base_url=self._get_model_base_url(model),
+                    api_key=self._get_model_api_key(model),
                 )
                 
                 # 构建 content
@@ -369,17 +412,19 @@ class LLMClientLite:
                     content = prompt
                 
                 # 构建请求参数
+                model_api_key = self._get_model_api_key(model)
+                model_base_url = self._get_model_base_url(model)
                 kwargs = {
                     "model": model,
                     "messages": [{"role": "user", "content": content}],
-                    "api_key": self.api_key,
+                    "api_key": model_api_key,
                     "timeout": 300,
                     "modalities": ["image", "text"]
                 }
                 
                 # 添加 base_url（如果有）
-                if self.base_url and self.base_url.strip():
-                    kwargs["api_base"] = self.base_url
+                if model_base_url and model_base_url.strip():
+                    kwargs["api_base"] = model_base_url
                 
                 # 添加 image_config（宽高比配置）
                 if size and "x" in size:
@@ -532,8 +577,8 @@ class LLMClientLite:
                 model=model,
                 messages=messages,
                 temperature=self.temperature,
-                api_key=self.api_key,
-                api_base=self.base_url,
+                api_key=self._get_model_api_key(model),
+                api_base=self._get_model_base_url(model),
                 timeout=300  # 5分钟超时保护
             )
             
@@ -585,8 +630,8 @@ class LLMClientLite:
                 model=model,
                 messages=messages,
                 temperature=self.temperature,
-                api_key=self.api_key,
-                api_base=self.base_url,
+                api_key=self._get_model_api_key(model),
+                api_base=self._get_model_base_url(model),
                 timeout=300  # 5分钟超时保护
             )
             

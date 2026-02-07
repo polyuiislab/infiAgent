@@ -91,6 +91,7 @@ const taskIdInput = document.getElementById('task-id');
 const taskSelect = document.getElementById('task-select');
 const confirmTaskBtn = document.getElementById('confirm-task-btn');
 const clearTaskBtn = document.getElementById('clear-task-btn');
+const resumeTaskBtn = document.getElementById('resume-task-btn');
 const copyTaskBtn = document.getElementById('copy-task-btn');
 const downloadTaskBtn = document.getElementById('download-task-btn');
 const configBtn = document.getElementById('config-btn');
@@ -102,8 +103,9 @@ const agentSelectList = document.getElementById('agent-select-list');
 const agentSearchInput = document.getElementById('agent-search-input');
 const agentTreePanel = document.getElementById('agent-tree-panel');
 const agentTreePanelContent = document.getElementById('agent-tree-panel-content');
-// Fixed to use Default system
-const AGENT_SYSTEM = 'Default';
+// Agent system: dynamic, loaded from selector / localStorage
+const agentSystemSelect = document.getElementById('agent-system-select');
+let agentSystem = localStorage.getItem('mla_agent_system') || 'Default';
 
 // Current selected agent (default: alpha_agent)
 let selectedAgent = localStorage.getItem('mla_selected_agent') || 'alpha_agent';
@@ -232,6 +234,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     updateWorkspacePath();
     
+    // Initialize agent system selector
+    await initAgentSystemSelector();
+    
     // Initialize agent selection
     initAgentSelection();
     
@@ -285,6 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     confirmTaskBtn.addEventListener('click', confirmTask);
     clearTaskBtn.addEventListener('click', clearTask);
+    resumeTaskBtn.addEventListener('click', resumeTask);
     copyTaskBtn.addEventListener('click', copyTask);
     downloadTaskBtn.addEventListener('click', downloadTask);
     configBtn.addEventListener('click', openConfigModal);
@@ -1514,10 +1520,52 @@ function updateAgentSelectButton() {
     }
 }
 
+// Initialize agent system selector
+async function initAgentSystemSelector() {
+    try {
+        const response = await fetch('/api/agent-systems', { credentials: 'include' });
+        const data = await response.json();
+        
+        if (data.systems && agentSystemSelect) {
+            agentSystemSelect.innerHTML = '';
+            data.systems.forEach(sys => {
+                const option = document.createElement('option');
+                option.value = sys;
+                option.textContent = sys;
+                if (sys === agentSystem) option.selected = true;
+                agentSystemSelect.appendChild(option);
+            });
+            
+            // Ensure current value is valid
+            if (!data.systems.includes(agentSystem)) {
+                agentSystem = data.systems[0] || 'Default';
+                localStorage.setItem('mla_agent_system', agentSystem);
+                agentSystemSelect.value = agentSystem;
+            }
+            
+            // Change event: switch agent system → reload agents list + agent tree
+            agentSystemSelect.addEventListener('change', async (e) => {
+                agentSystem = e.target.value;
+                localStorage.setItem('mla_agent_system', agentSystem);
+                
+                // Reset selected agent to default for new system
+                selectedAgent = 'alpha_agent';
+                localStorage.setItem('mla_selected_agent', selectedAgent);
+                const agentSelectText = document.getElementById('agent-select-text');
+                if (agentSelectText) agentSelectText.textContent = selectedAgent;
+                
+                console.log('Switched agent system to:', agentSystem);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load agent systems:', error);
+    }
+}
+
 // Load agents list
 async function loadAgentsList() {
     try {
-        const response = await fetch('/api/agents?agent_system=' + AGENT_SYSTEM, {
+        const response = await fetch('/api/agents?agent_system=' + agentSystem, {
             credentials: 'include'
         });
         const data = await response.json();
@@ -1630,7 +1678,7 @@ async function loadAgentTreeForAgent(agentName) {
     agentTreePanelContent.innerHTML = '<div class="agent-tree-loading">Loading agent tree...</div>';
     
     try {
-        const response = await fetch(`/api/config/agent-tree?root_agent=${encodeURIComponent(agentName)}`, {
+        const response = await fetch(`/api/config/agent-tree?root_agent=${encodeURIComponent(agentName)}&agent_system=${encodeURIComponent(agentSystem)}`, {
             credentials: 'include'
         });
         
@@ -1793,12 +1841,82 @@ function initAgentSelection() {
     }
 }
 
+// 恢复中断的任务
+async function resumeTask() {
+    const taskId = taskIdInput.value.trim();
+    if (!taskId) {
+        alert('请先输入 Task ID');
+        return;
+    }
+    
+    if (isRunning) {
+        alert('当前有任务正在运行');
+        return;
+    }
+    
+    try {
+        // 检查是否有可恢复的任务
+        const response = await fetch(`/api/resume/check?task_id=${encodeURIComponent(taskId)}`, {
+            credentials: 'include'
+        });
+        const data = await response.json();
+        
+        if (!data.found) {
+            alert(`没有找到可恢复的任务: ${data.message || '无中断任务'}`);
+            return;
+        }
+        
+        // 确认恢复
+        const confirmMsg = `发现中断的任务:\n\nAgent: ${data.agent_name}\n任务: ${data.user_input}\n中断于: ${data.interrupted_at}\n栈深度: ${data.stack_depth}\n\n是否恢复此任务？`;
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+        
+        // 确保 taskId 已确认
+        if (confirmedTaskId !== taskId) {
+            const confirmResponse = await fetch('/api/task/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ task_id: taskId })
+            });
+            const confirmData = await confirmResponse.json();
+            if (confirmData.error) {
+                alert(`Task confirmation failed: ${confirmData.error}`);
+                return;
+            }
+            confirmedTaskId = taskId;
+            localStorage.setItem('mla_task_id', taskId);
+        }
+        
+        // 设置运行状态
+        isRunning = true;
+        sendBtn.disabled = true;
+        sendBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        userInput.disabled = true;
+        statusText.textContent = 'Resuming...';
+        updateTaskButtonsState();
+        startHILTaskChecking();
+        
+        // 添加恢复提示消息
+        addMessage('system', 'system', `▶️ 恢复任务: ${data.agent_name} - ${data.user_input}`, true, false);
+        
+        // 使用原始的 agent_name 和 user_input 发起 SSE 连接
+        startSSEConnection(taskId, data.agent_name, data.user_input, agentSystem);
+        
+    } catch (error) {
+        console.error('Resume task failed:', error);
+        alert(`恢复任务失败: ${error.message}`);
+    }
+}
+
 // 发送消息
 async function sendMessage() {
     const taskId = taskIdInput.value.trim();
     const agentName = selectedAgent || 'alpha_agent';  // Use selected agent
     const userInputText = userInput.value.trim();
-    const agentSystem = AGENT_SYSTEM;  // Fixed to use Default
+    // agentSystem is already a global variable, no need to redeclare
     
     if (!taskId) {
         alert('Please enter Task ID');
@@ -1888,8 +2006,18 @@ async function sendMessage() {
     // 清空输入框
     userInput.value = '';
     
-    // 启动 SSE 连接
-    startSSEConnection(taskId, agentName, userInputText, agentSystem);
+    // 在任务末尾添加时间戳（与 CLI 行为一致）
+    const now = new Date();
+    const timestamp = now.getFullYear() + '-' + 
+        String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(now.getDate()).padStart(2, '0') + ' ' + 
+        String(now.getHours()).padStart(2, '0') + ':' + 
+        String(now.getMinutes()).padStart(2, '0') + ':' + 
+        String(now.getSeconds()).padStart(2, '0');
+    const userInputWithTimestamp = `${userInputText} [时间: ${timestamp}]`;
+    
+    // 启动 SSE 连接（发送带时间戳的输入）
+    startSSEConnection(taskId, agentName, userInputWithTimestamp, agentSystem);
 }
 
 // 停止任务
@@ -2479,7 +2607,7 @@ async function loadConfigFileLists() {
     
     // Load agent config files
     try {
-        const agentResponse = await fetch('/api/config/list?type=agent', {
+        const agentResponse = await fetch(`/api/config/list?type=agent&agent_system=${encodeURIComponent(agentSystem)}`, {
             credentials: 'include'
         });
         const agentData = await agentResponse.json();
@@ -2539,7 +2667,7 @@ async function loadConfigFile(filename, type = 'run_env') {
     statusDiv.className = 'config-status';
     
     try {
-        const response = await fetch(`/api/config/read?file=${encodeURIComponent(filename)}&type=${encodeURIComponent(type)}`, {
+        const response = await fetch(`/api/config/read?file=${encodeURIComponent(filename)}&type=${encodeURIComponent(type)}&agent_system=${encodeURIComponent(agentSystem)}`, {
             credentials: 'include'
         });
         
@@ -2589,7 +2717,8 @@ async function saveConfigFile() {
             body: JSON.stringify({
                 file: filename,
                 content: content,
-                type: currentConfigType
+                type: currentConfigType,
+                agent_system: agentSystem
             })
         });
         
@@ -2642,7 +2771,7 @@ async function loadAgentTree() {
     container.innerHTML = '<div class="agent-tree-loading">Loading agent tree...</div>';
     
     try {
-        const response = await fetch('/api/config/agent-tree', {
+        const response = await fetch(`/api/config/agent-tree?agent_system=${encodeURIComponent(agentSystem)}`, {
             credentials: 'include'
         });
         

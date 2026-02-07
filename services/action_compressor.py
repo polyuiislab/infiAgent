@@ -19,6 +19,9 @@ except ImportError:
 class ActionCompressor:
     """历史动作压缩器"""
     
+    # action_history 中的内部元数据字段（不参与 XML 转换和 token 统计）
+    _INTERNAL_FIELDS = {"_turn", "tool_call_id", "assistant_content", "reasoning_content", "_has_image", "_image_base64"}
+    
     def __init__(self, llm_client):
         """
         初始化
@@ -27,6 +30,7 @@ class ActionCompressor:
             llm_client: LLM客户端实例（用于总结）
         """
         self.llm_client = llm_client
+        self.compressor_multimodal = getattr(llm_client, 'compressor_multimodal', False)
         
         # 初始化tiktoken
         if HAS_TIKTOKEN:
@@ -99,7 +103,8 @@ class ActionCompressor:
             target_tokens=5000,  # 历史总结固定5k tokens
             thinking=thinking,
             task_input=task_input,
-            max_context_window=max_context_window
+            max_context_window=max_context_window,
+            actions=historical_actions  # 传递原始 actions（用于提取图片）
         )
         
         # 压缩最新action的大字段（50% of max_window）
@@ -121,7 +126,7 @@ class ActionCompressor:
         return result
     
     def _actions_to_xml(self, actions: List[Dict]) -> str:
-        """将actions转换为XML格式文本"""
+        """将actions转换为XML格式文本（跳过内部元数据字段）"""
         xml_parts = []
         for action in actions:
             tool_name = action.get("tool_name", "")
@@ -130,18 +135,43 @@ class ActionCompressor:
             
             action_xml = f"<action>\n  <tool_name>{tool_name}</tool_name>\n"
             
-            # 参数
+            # 参数（跳过内部字段）
             for k, v in arguments.items():
+                if k in self._INTERNAL_FIELDS:
+                    continue
                 v_str = str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 action_xml += f"  <tool_use:{k}>{v_str}</tool_use:{k}>\n"
             
-            # 结果
-            result_json = json.dumps(result, ensure_ascii=False, indent=2)
+            # 结果（排除以 _ 开头的内部字段，特别是 _image_base64）
+            result_clean = {k: v for k, v in result.items() if not k.startswith("_")}
+            result_json = json.dumps(result_clean, ensure_ascii=False, indent=2)
             action_xml += f"  <result>\n{result_json}\n  </result>\n</action>"
             
             xml_parts.append(action_xml)
         
         return "\n\n".join(xml_parts)
+    
+    def _extract_images_from_actions(self, actions: List[Dict]) -> List[Dict]:
+        """
+        从 action 列表中提取图片数据（用于多模态压缩）
+        
+        Returns:
+            [{base64: str, tool_name: str}] 列表（每张图一个条目）
+        """
+        images = []
+        if not actions:
+            return images
+        for action in actions:
+            if action.get("_has_image") and action.get("_image_base64"):
+                img_data = action["_image_base64"]
+                tool_name = action.get("tool_name", "image_read")
+                # _image_base64 可能是列表或单值（兼容两种格式）
+                if isinstance(img_data, list):
+                    for b64 in img_data:
+                        images.append({"base64": b64, "tool_name": tool_name})
+                else:
+                    images.append({"base64": img_data, "tool_name": tool_name})
+        return images
     
     def _summarize_historical_xml(
         self, 
@@ -149,12 +179,14 @@ class ActionCompressor:
         target_tokens: int = 5000,
         thinking: str = "",
         task_input: str = "",
-        max_context_window: int = None
+        max_context_window: int = None,
+        actions: List[Dict] = None
     ) -> Dict:
         """
         总结历史XML内容为一个summary action
         基于 thinking 和 task_input 智能判断哪些信息有效
         支持分段压缩：如果数据量过大，自动分段处理
+        支持多模态：当 compressor_multimodal=True 时，在压缩 LLM 调用中嵌入图片
         
         Args:
             xml_text: 历史actions的XML文本
@@ -162,12 +194,16 @@ class ActionCompressor:
             thinking: 当前的 thinking 内容（包含 todolist 和计划）
             task_input: 任务需求描述
             max_context_window: 最大上下文窗口（用于判断是否需要分段）
+            actions: 原始 action 列表（用于提取图片数据，可选）
             
         Returns:
             一个summary action
         """
         try:
             from services.llm_client import ChatMessage
+            
+            # 提取图片数据（如果支持多模态）
+            images = self._extract_images_from_actions(actions) if self.compressor_multimodal and actions else []
             
             # 检查数据量，决定是否需要分段压缩
             xml_tokens = self.count_tokens(xml_text)
@@ -193,7 +229,7 @@ class ActionCompressor:
                 return self._chunked_summarize(xml_text, target_tokens, thinking, task_input, available_tokens)
             
             # 数据量合适，直接压缩
-            return self._single_summarize(xml_text, target_tokens, thinking, task_input, context_info)
+            return self._single_summarize(xml_text, target_tokens, thinking, task_input, context_info, images=images)
         
         except Exception as e:
             safe_print(f"⚠️ 总结失败: {e}")
@@ -211,13 +247,16 @@ class ActionCompressor:
         target_tokens: int,
         thinking: str,
         task_input: str,
-        context_info: str
+        context_info: str,
+        images: List[Dict] = None
     ) -> Dict:
         """
         单次压缩（数据量不大时使用）
-        """
-        from services.llm_client import ChatMessage
+        支持多模态：当有图片时，在 LLM 调用中嵌入图片
         
+        Args:
+            images: [{base64: str, tool_name: str}] 图片列表（可选）
+        """
         prompt = f"""你是智能历史信息压缩助手。请基于任务需求和当前进度，智能压缩以下历史动作。
 
 {context_info}
@@ -244,17 +283,32 @@ class ActionCompressor:
    - 按时间顺序总结
    - 突出关键成果和产出
    - 保持信息的连贯性
+{"6. **图片说明**: 下方附有历史动作中读取的图片，请在总结中包含对图片内容的文字描述。" if images else ""}
 
 请直接输出压缩后的总结（中文）："""
         
-        history = [ChatMessage(role="user", content=prompt)]
+        # 构建 messages（支持多模态图片嵌入）
+        if images:
+            content_parts = [{"type": "text", "text": prompt}]
+            for img in images:
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": img["base64"] if img["base64"].startswith("data:") else f"data:image/jpeg;base64,{img['base64']}"}
+                })
+                content_parts.append({
+                    "type": "text",
+                    "text": f"(Image from {img['tool_name']})"
+                })
+            history = [{"role": "user", "content": content_parts}]
+        else:
+            history = [{"role": "user", "content": prompt}]
         
         response = self.llm_client.chat(
             history=history,
             model=self.llm_client.compressor_models[0],
             system_prompt=f"你是整体上下文构造专家。目标：将内容压缩到{target_tokens} tokens以内。",
-            tool_list=[],  # 空列表表示不使用工具
-            tool_choice="none"  # 明确表示不调用工具（压缩任务）
+            tool_list=[],
+            tool_choice="none"
         )
         
         summary = response.output if response.status == "success" else "[总结失败]"
