@@ -7,6 +7,8 @@
 from pathlib import Path
 from typing import Dict, Any
 import asyncio
+import json
+import os
 import re
 import requests
 from urllib.parse import urlencode
@@ -404,6 +406,222 @@ class WebSearchTool(BaseTool):
                 "error": ""
             }
             
+        except Exception as e:
+            return {
+                "status": "error",
+                "output": "",
+                "error": str(e)
+            }
+
+
+class YouWebSearchTool(BaseTool):
+    """网络搜索工具（可选）- 使用 You.com；默认免 API key（免费 MCP profile）"""
+
+    DEFAULT_MCP_URL = "https://api.you.com/mcp?profile=free"
+
+    @staticmethod
+    def _resolve_mcp_endpoint():
+        """
+        解析 You.com MCP 端点。
+
+        - 默认使用免费 profile（免 API key）；
+        - 设置 YDC_API_KEY / YOUCOM_API_KEY 后切换到带认证的端点；
+        - YOUCOM_MCP_URL 可覆盖端点地址。
+        """
+        api_key = os.environ.get("YOUCOM_API_KEY") or os.environ.get("YDC_API_KEY")
+        if os.environ.get("YOUCOM_MCP_URL"):
+            return os.environ["YOUCOM_MCP_URL"].strip(), api_key
+        if api_key:
+            return "https://api.you.com/mcp", api_key
+        return YouWebSearchTool.DEFAULT_MCP_URL, None
+
+    @staticmethod
+    def _parse_mcp_events(resp):
+        """
+        解析 MCP Streamable HTTP 响应（兼容纯 JSON 与 SSE 两种格式）。
+
+        SSE 切帧只按 LF/CRLF 拆分，避免 str.splitlines()
+        在 U+0085/U+2028 等字符上误拆非 ASCII 结果 JSON。
+        """
+        content_type = (resp.headers.get("Content-Type") or "").lower()
+        body = resp.text
+        events = []
+        if "text/event-stream" not in content_type:
+            try:
+                events.append(json.loads(body))
+            except (ValueError, TypeError):
+                pass
+            return events
+        for raw_frame in re.split(r"\r\n|\n", body):
+            line = raw_frame.strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[len("data:"):].strip()
+            if not payload:
+                continue
+            try:
+                events.append(json.loads(payload))
+            except (ValueError, TypeError):
+                continue
+        return events
+
+    @classmethod
+    def _youcom_search(cls, query, max_results=10, timeout=30):
+        """
+        通过 You.com MCP 的 you-search 工具执行搜索，返回
+        [{title, href, body}, ...]，与 DuckDuckGo 结果同构。
+        """
+        endpoint, api_key = cls._resolve_mcp_endpoint()
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        if api_key:
+            headers["Authorization"] = "Bearer " + api_key
+
+        def _rpc(method, params=None, session_id=None):
+            payload = {"jsonrpc": "2.0", "id": 1, "method": method}
+            if params is not None:
+                payload["params"] = params
+            req_headers = dict(headers)
+            if session_id:
+                req_headers["Mcp-Session-Id"] = session_id
+            resp = requests.post(
+                endpoint, data=json.dumps(payload), headers=req_headers, timeout=timeout
+            )
+            resp.raise_for_status()
+            if session_id is None:
+                session_id = resp.headers.get("Mcp-Session-Id")
+            results = []
+            for event in cls._parse_mcp_events(resp):
+                if isinstance(event, dict) and event.get("id") == 1:
+                    results.append(event)
+            return results, session_id
+
+        # initialize, notifications/initialized, tools/call
+        init_params = {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "infiagent-youcom-search", "version": "1.0.0"},
+        }
+        responses, session_id = _rpc("initialize", init_params)
+        if not responses:
+            raise RuntimeError("You.com MCP initialize failed: empty response")
+        notify_headers = dict(headers)
+        if session_id:
+            notify_headers["Mcp-Session-Id"] = session_id
+        requests.post(
+            endpoint,
+            data=json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            headers=notify_headers,
+            timeout=timeout,
+        )
+
+        call_params = {
+            "name": "you-search",
+            "arguments": {"query": query, "count": int(max_results)},
+        }
+        responses, _ = _rpc("tools/call", call_params, session_id=session_id)
+        if not responses:
+            raise RuntimeError("You.com MCP tools/call returned no result")
+
+        result = responses[0].get("result") or {}
+        if result.get("isError"):
+            raise RuntimeError("You.com MCP you-search error: " + json.dumps(result, ensure_ascii=False))
+
+        # 展开 content 文本，解析 {"results": {"web": [...]}} 结构
+        content = result.get("content") or []
+        text_parts = [
+            c.get("text", "") for c in content if isinstance(c, dict) and "text" in c
+        ]
+        text = "\n".join(text_parts)
+        if not text:
+            return []
+        try:
+            data = json.loads(text)
+        except (ValueError, TypeError):
+            return []
+        web = (data.get("results") or {}).get("web") or []
+        results = []
+        for item in web:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url") or ""
+            if not url:
+                continue
+            snippets = item.get("snippets") or []
+            body = item.get("description") or (snippets[0] if snippets else "")
+            results.append({
+                "title": item.get("title") or "No title",
+                "href": url,
+                "body": body or "",
+            })
+        return results[:max_results]
+
+    def execute(self, task_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        网络搜索（You.com，可选工具；默认免 API key）
+
+        Parameters:
+            query (str): 搜索关键词
+            max_results (int, optional): 最大结果数，默认10
+            save_path (str, optional): 保存结果的相对路径（.md文件）
+        """
+        try:
+            query = parameters.get("query")
+            max_results = parameters.get("max_results", 10)
+            save_path = parameters.get("save_path")
+
+            if not query:
+                return {
+                    "status": "error",
+                    "output": "",
+                    "error": "query is required"
+                }
+
+            results = self._youcom_search(query, max_results=int(max_results))
+
+            # 格式化为 Markdown（与 web_search 保持一致）
+            results_md = []
+            results_md.append(f"# Search Results: {query}\n")
+            results_md.append(f"Total: {len(results)} results\n")
+
+            for i, result in enumerate(results, 1):
+                title = result.get('title', 'No title')
+                url = result.get('href', '')
+                snippet = result.get('body', '')
+
+                results_md.append(f"## {i}. {title}\n")
+                results_md.append(f"**URL**: {url}\n")
+                results_md.append(f"**Snippet**: {snippet}\n")
+
+            results_text = '\n'.join(results_md)
+
+            # 保存到文件（与 web_search 相同的命名规则）
+            if save_path:
+                save_path_obj = Path(save_path)
+                safe_query = re.sub(r'[^\w\s-]', '', query).strip()
+                safe_query = re.sub(r'[-\s]+', '_', safe_query)[:50]
+
+                new_filename = f"{save_path_obj.stem}_{safe_query}_n{max_results}{save_path_obj.suffix}"
+                final_save_path = str(save_path_obj.parent / new_filename)
+
+                abs_save_path = get_abs_path(task_id, final_save_path)
+                abs_save_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with open(abs_save_path, 'w', encoding='utf-8') as f:
+                    f.write(results_text)
+
+                output = f"结果保存在 {final_save_path}"
+            else:
+                output = results_text
+
+            return {
+                "status": "success",
+                "output": output,
+                "error": ""
+            }
+
         except Exception as e:
             return {
                 "status": "error",

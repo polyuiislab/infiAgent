@@ -146,6 +146,26 @@ tools:
           description: "保存搜索结果的相对路径（.md 文件），请保存在 temp/web_search目录中。"
       required: ["query","save_path"]
 
+  youcom_search:
+    level: 0
+    type: tool_call_agent
+    name: "youcom_search"
+    description: "（可选）使用 You.com 进行网络搜索，默认免 API key。结果会保存为 Markdown 格式。"
+    parameters:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "搜索关键词或问题。"
+        max_results:
+          type: "integer"
+          default: 10
+          description: "返回的最大结果数，默认 10。"
+        save_path:
+          type: "string"
+          description: "保存搜索结果的相对路径（.md 文件），请保存在 temp/web_search目录中。"
+      required: ["query","save_path"]
+
   google_scholar_search:
     level: 0
     type: tool_call_agent

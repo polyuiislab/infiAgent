@@ -11,6 +11,7 @@ from .file_tools import (
 
 from .web_tools import (
     WebSearchTool,
+    YouWebSearchTool,
     GoogleScholarSearchTool,
     CrawlPageTool,
     FileDownloadTool
@@ -84,6 +85,7 @@ __all__ = [
     "FileMoveTool",
     "FileDeleteTool",
     "WebSearchTool",
+    "YouWebSearchTool",
     "GoogleScholarSearchTool",
     "ArxivSearchTool",
     "CrawlPageTool",
