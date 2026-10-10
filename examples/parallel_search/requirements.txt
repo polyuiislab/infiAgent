@@ -1,0 +1,2 @@
+# The current InfiAgent MCP loader uses the MCP 1.x client API.
+mcp>=1.10,<2

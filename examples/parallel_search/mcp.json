@@ -1,0 +1,14 @@
+{
+  "servers": [
+    {
+      "name": "parallel",
+      "transport": "streamable_http",
+      "url": "https://search.parallel.ai/mcp",
+      "headers": {
+        "User-Agent": "infiAgent/parallel-search-example"
+      },
+      "timeout": 60,
+      "sse_read_timeout": 300
+    }
+  ]
+}

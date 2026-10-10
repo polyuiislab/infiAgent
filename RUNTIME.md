@@ -7,6 +7,9 @@ loop** (short action windows + periodic thinking summaries + file relay), and a
 under a portable `user_root/`, so tasks survive interruption and resume across
 processes and machines).
 
+For free web search and page fetching through the existing MCP runtime, see the
+[Parallel Search MCP example](examples/parallel_search/README.md).
+
 ```bash
 pip install infiagent
 ```
