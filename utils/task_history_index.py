@@ -16,8 +16,9 @@ import math
 import re
 import sqlite3
 from datetime import datetime
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence
 
 from utils.user_paths import get_user_task_history_dir
 
@@ -28,11 +29,16 @@ def get_task_history_db_path() -> Path:
     return root / "task_history.db"
 
 
-def _connect() -> sqlite3.Connection:
+@contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(get_task_history_db_path()))
-    conn.row_factory = sqlite3.Row
-    _ensure_schema(conn)
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        _ensure_schema(conn)
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:

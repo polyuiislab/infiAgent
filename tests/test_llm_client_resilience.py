@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import time
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -55,27 +56,26 @@ class LLMClientResilienceTests(unittest.TestCase):
         self.client.timeout = 1
         self.client.stream_timeout = 1
 
+        release_worker = threading.Event()
+        worker_finished = threading.Event()
+
         def slow_completion(**kwargs):
-            time.sleep(0.30)
+            release_worker.wait(5)
+            worker_finished.set()
             return iter(())
 
-        started_at = time.perf_counter()
-        with patch("services.llm_client.completion", side_effect=slow_completion):
-            with patch.object(self.client, "_append_debug_record", lambda **kwargs: None):
-                response = self.client._chat_internal(
-                    history=[],
-                    model="openai/gpt-4o-mini",
-                    system_prompt="system",
-                    tool_list=[],
-                    tool_choice=None,
-                    temperature=0,
-                    max_tokens=0,
-                )
-        elapsed = time.perf_counter() - started_at
-
-        self.assertEqual(response.status, "error")
-        self.assertEqual(response.finish_reason, "timeout")
-        self.assertLess(elapsed, 0.20)
+        try:
+            with patch("services.llm_client.completion", side_effect=slow_completion):
+                with patch.object(self.client, "_append_debug_record", lambda **kwargs: None):
+                    response = self.client._chat_internal(
+                        history=[], model="openai/gpt-4o-mini", system_prompt="system",
+                        tool_list=[], tool_choice=None, temperature=0, max_tokens=0,
+                    )
+            self.assertEqual(response.status, "error")
+            self.assertEqual(response.finish_reason, "timeout")
+            self.assertFalse(worker_finished.is_set(), "timeout waited for the stalled worker")
+        finally:
+            release_worker.set()
 
     def test_non_retriable_error_stops_retry_loop_early(self):
         attempts = []
@@ -169,31 +169,30 @@ class LLMClientResilienceTests(unittest.TestCase):
         self.client.stream_timeout = 0.05
         self.client.timeout = 1
 
+        release_worker = threading.Event()
+        worker_finished = threading.Event()
+
         def slow_stream_completion(**kwargs):
             def _iterator():
                 yield _DummyChunk(content="hello")
-                time.sleep(0.30)
+                release_worker.wait(5)
+                worker_finished.set()
                 yield _DummyChunk(content="world", finish_reason="stop")
             return _iterator()
 
-        started_at = time.perf_counter()
-        with patch("services.llm_client.completion", side_effect=slow_stream_completion):
-            with patch.object(self.client, "_append_debug_record", lambda **kwargs: None):
-                response = self.client._chat_internal(
-                    history=[],
-                    model="openai/gpt-4o-mini",
-                    system_prompt="system",
-                    tool_list=[],
-                    tool_choice=None,
-                    temperature=0,
-                    max_tokens=0,
-                )
-        elapsed = time.perf_counter() - started_at
-
-        self.assertEqual(response.status, "error")
-        self.assertEqual(response.finish_reason, "timeout")
-        self.assertIn("流式输出超时", response.error_information)
-        self.assertLess(elapsed, 0.20)
+        try:
+            with patch("services.llm_client.completion", side_effect=slow_stream_completion):
+                with patch.object(self.client, "_append_debug_record", lambda **kwargs: None):
+                    response = self.client._chat_internal(
+                        history=[], model="openai/gpt-4o-mini", system_prompt="system",
+                        tool_list=[], tool_choice=None, temperature=0, max_tokens=0,
+                    )
+            self.assertEqual(response.status, "error")
+            self.assertEqual(response.finish_reason, "timeout")
+            self.assertIn("流式输出超时", response.error_information)
+            self.assertFalse(worker_finished.is_set(), "timeout waited for the stalled stream")
+        finally:
+            release_worker.set()
 
     def test_outbound_history_keeps_native_reasoning_by_default(self):
         captured = {}
