@@ -12,6 +12,15 @@ import os
 import time
 import traceback
 from collections import OrderedDict
+import contextvars
+import hashlib
+from contextlib import ExitStack
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from utils.atomic_state import read_json, write_json, StateCommitError, StateCorruptError
+from utils.execution_scope import ExecutionScope, CURRENT, TOOL_CALL, AgentCancelled, AgentStopped, bind, check_cancelled, tool_call as bind_tool_call
+from utils.agent_activities import positive_limit
 
 # Windows兼容性：设置UTF-8编码
 try:
@@ -83,7 +92,10 @@ def _resolve_agent_reasoning_mode(agent_config: Dict, runtime: Dict) -> str:
     )
 
 
-class AgentExecutor:
+from core.local_execution import LocalExecution
+
+
+class AgentExecutor(LocalExecution):
     """Agent执行器 - 正确的XML上下文架构"""
     
     def __init__(
@@ -113,7 +125,7 @@ class AgentExecutor:
 
         # 从配置中提取信息
         self.available_tools = list(agent_config.get("available_tools", []))
-        for framework_tool in ("task_history_search", "load_skill", "offload_skill"):
+        for framework_tool in ("task_history_search", "load_skill", "offload_skill", "spawn_subagents", "collect", "cancel", "collect_subagents", "cancel_subagents"):
             if framework_tool not in self.available_tools and framework_tool in config_loader.all_tools:
                 self.available_tools.append(framework_tool)
         self.max_turns = self._resolve_max_turns()
@@ -200,11 +212,11 @@ class AgentExecutor:
         return getattr(self, "reasoning_mode", "thinking") == "react"
 
     def _tool_call_required_for_response(self) -> bool:
-        return getattr(self, "reasoning_mode", "thinking") in {"thinking", "react_lite"}
+        return getattr(self, "reasoning_mode", "thinking") == "thinking"
 
     def _execution_tool_choice_override(self) -> Optional[str]:
         if getattr(self, "reasoning_mode", "thinking") == "react_lite":
-            return "required"
+            return "auto"
         return None
 
     def _get_agent_model_preference(self, category: str) -> Optional[str]:
@@ -261,7 +273,7 @@ class AgentExecutor:
             "phase": parts[0] if len(parts) > 0 else "",
             "domain": parts[1] if len(parts) > 1 else "",
             "action": parts[2] if len(parts) > 2 else "",
-            "payload": payload,
+            "payload": {**payload, "agent_id": getattr(self, "agent_id", "") or "", "agent_name": self.agent_name},
         }
         for handler in self.extra_event_handlers:
             emitter = getattr(handler, "emit", None)
@@ -273,22 +285,72 @@ class AgentExecutor:
                 pass
     
     def run(self, task_id: str, user_input: str) -> Dict:
+        parent = CURRENT.get()
+        if parent is not None and not parent.agent_id:
+            scope = parent
+        else:
+            scope = ExecutionScope(parent_id=parent.agent_id if parent else None,
+                instance_key=TOOL_CALL.get() if parent else '', depth=parent.depth if parent else 0,
+                parent_cancel=parent.cancel if parent else None, parent_scope=parent)
+            if parent:
+                scope.usage_lock = parent.usage_lock
+        scope.agent_name = self.agent_name
+        scope.agent_system = self.config_loader.agent_system_name
+        scope.task_id = str(Path(task_id).resolve())
+        scope.context_mode = getattr(self, 'context_mode', scope.context_mode)
+        if scope.context_mode == 'inherit' and parent and parent.agent_id:
+            scope.context_seed = (self.conversation_storage.load_actions(task_id, parent.agent_id) or {}).get('action_history', [])
+        with ExitStack() as resources:
+            resources.enter_context(bind(scope))
+            if not scope.parent_id:
+                from utils.experience_store import _file_lock
+                from utils.workspaces import files_root, concurrency
+                task_root = Path(task_id).resolve()
+                from utils.task_owner import task_owner
+                if not resources.enter_context(task_owner(task_id)):
+                    return {'status': 'busy', 'output': '', 'error': 'Task already running'}
+                generation = read_json(task_root / '.sdk_runtime' / 'generation.json')
+                if generation:
+                    scope.instance_key = str(generation['id'])
+                shared_files = files_root(task_id)
+                if shared_files != task_root and concurrency(task_id) == 'serial':
+                    resources.enter_context(_file_lock(shared_files.parent / 'run-owner'))
+            result = None
+            try:
+                check_cancelled()
+                result = self._run_inner(task_id, user_input)
+                return result
+            except AgentCancelled as exc:
+                status = 'stopped' if isinstance(exc, AgentStopped) else 'cancelled'
+                result = {'status': status, 'output': '', 'error_code': status.upper()}
+                if self.agent_id:
+                    self.hierarchy_manager.pop_agent(self.agent_id, status)
+                self.event_emitter.dispatch(AgentEndEvent(status=status, result=result))
+                return result
+            finally:
+                activities = getattr(self.tool_executor, 'activities', None)
+                if activities:
+                    activities.close()
+                if isinstance(result, dict):
+                    from utils.usage_metrics import _zero, _finalize
+                    result['usage'] = _finalize({**_zero(), **scope.usage})
+                if scope is parent:
+                    scope.agent_id = ''
+
+    def _run_inner(self, task_id: str, user_input: str) -> Dict:
         """执行Agent任务"""
 
-        self.event_emitter.dispatch(AgentStartEvent(
-            agent_name=self.agent_name, 
-            task_input=user_input
-        ))        
         # 存储 task_input 供压缩器使用
         self.current_task_id = task_id
         self.current_task_input = user_input
         try:
             try:
-                self.hierarchy_manager.set_runtime_metadata(
-                    agent_system=self.config_loader.agent_system_name,
-                    agent_name=self.agent_name,
-                    user_input=user_input,
-                )
+                if not CURRENT.get() or not CURRENT.get().parent_id:
+                    self.hierarchy_manager.set_runtime_metadata(
+                        agent_system=self.config_loader.agent_system_name,
+                        agent_name=self.agent_name,
+                        user_input=user_input,
+                    )
             except Exception:
                 pass
 
@@ -301,7 +363,14 @@ class AgentExecutor:
 
             # Agent入栈
             self.agent_id = self.hierarchy_manager.push_agent(self.agent_name, user_input)
+            if CURRENT.get():
+                CURRENT.get().agent_id = self.agent_id
             self.tool_executor.set_agent_context(agent_id=self.agent_id, agent_name=self.agent_name)
+            self.tool_executor.available_agent_tools = set(self.available_tools)
+            self.event_emitter.dispatch(AgentStartEvent(agent_name=self.agent_name, task_input=user_input))
+            activity_root = Path(task_id) / ".sdk_runtime" / "agent_activities" / hashlib.sha256(self.agent_id.encode()).hexdigest()[:24]
+            if any(activity_root.glob("activity_*.json")):
+                self.tool_executor.child_activities(task_id)
 
             # 尝试加载已有的对话历史。若历史里已有 final_output，
             # _load_state_from_storage 会直接返回该最终结果，避免把 dict
@@ -341,6 +410,7 @@ class AgentExecutor:
                 ))
                 
                 try:
+                    self._auto_collect_children(task_id, user_input, turn)
                     self._maybe_run_scheduled_fresh(task_id, user_input, turn)
 
                     # 每轮开始前保存状态
@@ -477,14 +547,12 @@ class AgentExecutor:
                     current_llm_turn = self.llm_turn_counter
 
                     # 执行所有工具调用
-                    for tool_call in llm_response.tool_calls:
-                        final_output_result = self._execute_tool_call(
-                            tool_call, task_id, user_input, turn,
-                            assistant_content=current_assistant_content,
-                            reasoning_content=current_reasoning_content,
-                            thinking_blocks=current_thinking_blocks,
-                            llm_turn=current_llm_turn
-                        )
+                    for final_output_result in self._execute_tool_batch(
+                        llm_response.tool_calls, task_id, user_input, turn,
+                        assistant_content=current_assistant_content,
+                        reasoning_content=current_reasoning_content,
+                        thinking_blocks=current_thinking_blocks, llm_turn=current_llm_turn,
+                    ):
                         if final_output_result:
                             final_output_result = self._with_model_outputs(final_output_result)
                             self.event_emitter.dispatch(AgentEndEvent(status='success', result=final_output_result))
@@ -551,9 +619,19 @@ class AgentExecutor:
                 pending_tool_count=len(self.pending_tools)
             ))
             
+            # History is committed before child acknowledgements. Repair that
+            # boundary after interruption so auto-collect cannot deliver twice.
+            manager = getattr(self.tool_executor, 'activities', None)
+            if manager is not None:
+                for record in self.action_history_fact:
+                    receipts = record.get('result', {}).get('_activity_receipts', [])
+                    known = [h for h in receipts if h in manager.records]
+                    if known:
+                        manager.acknowledge(known)
+
             # 检查是否已经完成（有final_output）
             for action in self.action_history_fact:
-                if action.get("tool_name") == "final_output":
+                if action.get("tool_name") == "final_output" and not action.get('result', {}).get('error_code'):
                     final_result = action.get("result", {})
                     self.event_emitter.dispatch(CliDisplayEvent(
                         message=f"\n✅ 任务已完成，直接返回之前的final_output结果\n   状态: {final_result.get('status')}", 
@@ -563,7 +641,9 @@ class AgentExecutor:
             
             # 恢复pending工具（如果有）
             if self.pending_tools:
-                self._recover_pending_tools(task_id)
+                recovered = self._recover_pending_tools(task_id, start_turn)
+                if recovered is not None:
+                    return recovered
 
         return start_turn
 
@@ -950,7 +1030,7 @@ class AgentExecutor:
     def _execute_tool_call(self, tool_call: Dict, task_id: str, user_input: str, turn: int,
                           assistant_content: str = "", reasoning_content: str = "",
                           thinking_blocks: List[Dict] = None,
-                          llm_turn: int = 0) -> Dict:
+                          llm_turn: int = 0, _prepared: bool = False, _result: Optional[Dict] = None) -> Dict:
         """
         执行单个工具调用并分发事件
         
@@ -964,30 +1044,32 @@ class AgentExecutor:
             llm_turn: LLM 调用轮次（用于消息分组）
         """
         # ✅ 在保存 pending 之前，为 level != 0 的工具添加 uuid
-        arguments_with_uuid = self._add_uuid_if_needed(tool_call.name, tool_call.arguments)
+        arguments_with_uuid = tool_call.arguments if _prepared else self._add_uuid_if_needed(tool_call.name, tool_call.arguments)
         
         # ✅ 先标记为pending（保存带 uuid 的参数）
         # 发送工具调用开始事件
-        self.event_emitter.dispatch(ToolCallStartEvent(
-            tool_name=tool_call.name, 
-            arguments=arguments_with_uuid
-        ))
+        if not _prepared:
+            self.event_emitter.dispatch(ToolCallStartEvent(
+                tool_name=tool_call.name, arguments=arguments_with_uuid, tool_call_id=tool_call.id
+            ))
 
+        logical_id = getattr(tool_call, 'logical_id', f"{self.tool_call_counter}:{tool_call.id}")
         pending_tool = {
+            "logical_id": logical_id,
             "id": tool_call.id,
             "name": tool_call.name,
             "arguments": arguments_with_uuid,
             "status": "pending"
         }
-        self.pending_tools.append(pending_tool)
+        if not _prepared:
+            pending_tool["metadata"] = dict(assistant_content=assistant_content, reasoning_content=reasoning_content, thinking_blocks=thinking_blocks, llm_turn=llm_turn)
+            self.pending_tools.append(pending_tool)
         self._save_state(task_id, user_input, turn)  # 保存pending状态
 
         # 执行工具（使用带 uuid 的参数）
-        tool_result = self.tool_executor.execute(
-            tool_call.name,
-            arguments_with_uuid,
-            task_id
-        )
+        invocation = SimpleNamespace(id=tool_call.id, name=tool_call.name,
+                                     logical_id=logical_id)
+        tool_result = _result if _result is not None else self._invoke_tool_durable(invocation, task_id, arguments_with_uuid)
 
         self._handle_special_tool_side_effects(
             tool_name=tool_call.name,
@@ -1004,7 +1086,7 @@ class AgentExecutor:
         self.event_emitter.dispatch(ToolCallEndEvent(
             tool_name=tool_call.name, 
             status=tool_result.get('status', 'unknown'), 
-            result=tool_result
+            result=tool_result, tool_call_id=tool_call.id
         ))
 
         # 记录动作到历史（增强格式：包含消息重建所需的字段）
@@ -1066,7 +1148,10 @@ class AgentExecutor:
                 action_record["_has_image"] = True
                 action_record["_image_base64"] = image_base64_list  # 现在是列表
         
-        # 添加到完整轨迹（永不压缩，但不存储 base64 以节省空间）
+        if tool_call.name != 'final_output':
+            tool_result = self._cap_tool_output(task_id, invocation.logical_id, tool_result)
+            action_record['result'] = tool_result
+        # Full tool output remains in the durable receipt and output_ref file.
         fact_record = {k: v for k, v in action_record.items() if k != "_image_base64"}
         fact_record["_image_base64"] = None  # fact 中不保留 base64，仅记录 _has_image 标志
         self.action_history_fact.append(fact_record)
@@ -1080,14 +1165,14 @@ class AgentExecutor:
             "result": {k: v for k, v in tool_result.items() if not k.startswith("_")}
         })
 
-        # 工具执行后保存状态
-        self._save_state(task_id, user_input, turn)
-        
-        # 增加工具调用计数
+        # Commit history before acknowledging child results.
         self.tool_call_counter += 1
+        self._save_state(task_id, user_input, turn)
+        self._acknowledge_activity_results(tool_result)
+        self._check_tool_error_streak()
         
         # 如果是final_output，返回结果
-        if tool_call.name == "final_output":
+        if tool_call.name == "final_output" and not tool_result.get("error_code"):
             return tool_result
         return None
 
@@ -1138,6 +1223,12 @@ class AgentExecutor:
             tool_result.pop("_fresh_task_id", None)
 
     def _maybe_run_scheduled_fresh(self, task_id: str, user_input: str, turn: int):
+        check_cancelled()
+        scope = CURRENT.get()
+        if scope and scope.parent_id:
+            return
+        if getattr(self.tool_executor, 'activities', None) and self.tool_executor.activities.outstanding():
+            return
         external_reason = pop_fresh_request(task_id)
         if external_reason:
             self._perform_fresh(task_id, user_input, turn, external_reason)
@@ -1154,6 +1245,11 @@ class AgentExecutor:
         """
         if has_running_background_processes(task_id):
             return False, "当前仍有后台工具在运行，暂不允许 fresh。请等待后台工具结束后再刷新。"
+        activities = getattr(self.tool_executor, 'activities', None)
+        if activities is not None:
+            if activities.outstanding():
+                return False, 'Collect child results before refreshing the agent'
+            activities.close(cancel_pending=False)
 
         self.event_emitter.dispatch(CliDisplayEvent(
             message=f"🔄 Fresh 开始: {reason}",
@@ -1174,7 +1270,7 @@ class AgentExecutor:
         self.config_loader = loader_cls(self.config_loader.agent_system_name)
         self.agent_config = self.config_loader.get_tool_config(self.agent_name)
         self.available_tools = list(self.agent_config.get("available_tools", []))
-        for framework_tool in ("task_history_search", "load_skill", "offload_skill"):
+        for framework_tool in ("task_history_search", "load_skill", "offload_skill", "spawn_subagents", "collect", "cancel", "collect_subagents", "cancel_subagents"):
             if framework_tool not in self.available_tools and framework_tool in self.config_loader.all_tools:
                 self.available_tools.append(framework_tool)
         self._inject_mcp_tools()
@@ -1202,6 +1298,7 @@ class AgentExecutor:
             raise_on_error=self.raise_on_error,
         )
         self.tool_executor.set_agent_context(agent_id=self.agent_id, agent_name=self.agent_name)
+        self.tool_executor.available_agent_tools = set(self.available_tools)
         if hasattr(self, "action_compressor"):
             delattr(self, "action_compressor")
 
@@ -1237,7 +1334,7 @@ class AgentExecutor:
         
         error_display += """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 任务已保存在当前状态，请:
+💡 请检查最后一次成功保存的状态；存储错误时本轮可能尚未提交。请:
    1. 根据错误信息排查问题（修复网络、配置等）
    2. 重新启动 CLI 并输入 /resume 命令恢复任务
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1248,6 +1345,7 @@ class AgentExecutor:
             "agent_name": self.agent_name,
             "output": "",
             "error_type": error_type,
+            "error_code": getattr(e, "code", "EXECUTION_ERROR"),
             "error_message": error_msg,
             "error_information": error_display,
             "latest_thinking": self.latest_thinking,
@@ -1734,52 +1832,6 @@ class AgentExecutor:
             ))
             traceback.print_exc()
             return False
-    
-    def _recover_pending_tools(self, task_id: str):
-        """恢复pending状态的工具调用"""
-        for pending_tool in self.pending_tools:
-            tool_name, tool_args = pending_tool['name'], pending_tool['arguments']
-            try:
-                self.event_emitter.dispatch(CliDisplayEvent(
-                    message=f"   🔄 恢复执行: {tool_name}\n   📋 参数: {tool_args}", 
-                    style='info'
-                ))
-                
-                # 重新执行工具
-                tool_result = self.tool_executor.execute(
-                    tool_name,
-                    tool_args,
-                    task_id
-                )
-                
-                # 记录结果
-                action_record = {
-                    "tool_name": tool_name,
-                    "arguments": tool_args,
-                    "result": tool_result
-                }
-                
-                self.action_history_fact.append(action_record)
-                self.action_history.append(action_record)
-                
-                # 从pending移除
-                self.pending_tools.remove(pending_tool)
-                
-                self.event_emitter.dispatch(CliDisplayEvent(
-                    message=f"   ✅ 恢复完成: {tool_name}", 
-                    style='success'
-                ))
-                
-                # 如果是final_output，直接返回
-                if tool_name == "final_output":
-                    return tool_result
-            except Exception as e:
-                self.event_emitter.dispatch(CliDisplayEvent(
-                    message=f"   ❌ 恢复失败: {tool_name} - {e}", 
-                    style='error'
-                ))
-        # 清空pending列表
-        self.pending_tools = []
     
     def _save_state(self, task_id: str, user_input: str, current_turn: int):
         """

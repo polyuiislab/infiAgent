@@ -1,0 +1,14 @@
+services:
+  infiagent:
+    image: chenglinhku/mlav3:3.13.0
+    ports:
+      - "127.0.0.1:4260:4260"
+    volumes:
+      - ./user_root:/data/user_root
+    environment:
+      INFIAGENT_MAX_RUNS: "2"
+      MLA_PARALLEL_AGENTS_MAX: "4"
+      MLA_LLM_MAX_CONCURRENCY: "6"
+      INFIAGENT_API_TOKEN: ${INFIAGENT_API_TOKEN:-}
+    stop_grace_period: 45s
+    restart: unless-stopped

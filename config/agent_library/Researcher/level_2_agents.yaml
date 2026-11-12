@@ -29,7 +29,6 @@ tools:
       - file_move
       - file_write
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         根据任务场景收集数据，包括但不限于论文，网页资料。以及任何可以通过互联网访问获得的信息。
@@ -73,7 +72,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是对文件空间内的资料（包括 pdf,图片，doc，纯文本，markdown 文件）进行分析，产生需求的结论，计划等各种产物,如实验计划，论文大纲等等。
@@ -125,7 +123,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         完成各种复杂的编程任务！
@@ -189,7 +186,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         完成各种作图，包括数据转图像，描述转图像,支持各种风格，ai生图，代码生图（数据图），写实，油画等等。
@@ -243,7 +239,6 @@ tools:
       - final_output
       - proof_agent
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是基于现在的所有材料完成论文/报告/或者任何文档结果的生成（生成一个 tex 项目）

@@ -10,6 +10,7 @@ import yaml
 import time
 import json
 import copy
+import hashlib
 import re
 import queue
 import threading
@@ -33,6 +34,17 @@ from utils.user_paths import (
     get_user_runtime_dir,
 )
 from utils.raw_trace_recorder import append_raw_trace_record, make_trace_id
+
+
+_SHARED_DEPLOYMENT_COOLDOWNS = {}
+_MODEL_LIMITERS = {}
+_LIMITER_LOCK = threading.RLock()
+
+
+def reset_shared_deployment_state():
+    with _LIMITER_LOCK:
+        _SHARED_DEPLOYMENT_COOLDOWNS.clear()
+        _MODEL_LIMITERS.clear()
 
 
 @dataclass
@@ -238,7 +250,9 @@ class SimpleLLMClient:
         self.compressor_multimodal = self.config.get("compressor_multimodal", False)
         
         # 多部署路由状态（缓存亲和 + 故障转移）：deployment_id -> 冷却截止时间戳
-        self._deployment_cooldowns: Dict[str, float] = {}
+        self._deployment_state_key = hashlib.sha256(json.dumps(self.config, sort_keys=True, default=str).encode()).hexdigest()
+        with _LIMITER_LOCK:
+            self._deployment_cooldowns: Dict[str, float] = _SHARED_DEPLOYMENT_COOLDOWNS.setdefault(self._deployment_state_key, {})
         try:
             self._deployment_cooldown_seconds = float(self.config.get("deployment_cooldown_seconds", 120) or 120)
         except (TypeError, ValueError):
@@ -1230,7 +1244,29 @@ class SimpleLLMClient:
         safe_print(f"   ❌ LLM调用失败（已重试{max_retries + 1}次）")
         return last_error
     
-    def _chat_internal(
+    def _chat_internal(self, *args, **kwargs):
+        from utils.execution_scope import check_cancelled, record_usage
+        model = kwargs.get("model", args[1] if len(args) > 1 else "")
+        limit = int((self.model_configs.get(model) or {}).get("max_concurrency", os.environ.get("MLA_LLM_MAX_CONCURRENCY", "6")))
+        if limit < 0 or limit > 256:
+            raise ValueError("Model concurrency must be between 0 and 256")
+        semaphore = None
+        if limit:
+            with _LIMITER_LOCK:
+                semaphore = _MODEL_LIMITERS.setdefault((self._deployment_state_key, model, limit), threading.BoundedSemaphore(limit))
+            while not semaphore.acquire(timeout=.1):
+                check_cancelled()
+        try:
+            check_cancelled()
+            response = self._chat_internal_unlimited(*args, **kwargs)
+            if response.status == 'success' or getattr(response, 'usage', None):
+                record_usage(getattr(response, 'usage', None), model=model, purpose=kwargs.get('debug_label', 'execution'))
+            return response
+        finally:
+            if semaphore:
+                semaphore.release()
+
+    def _chat_internal_unlimited(
         self,
         history: List,
         model: str,
@@ -1255,6 +1291,8 @@ class SimpleLLMClient:
             debug_task_id: 可选 task_id；传入后调试请求会按 task 追加到 conversations 目录
             debug_label: 调试记录标签，用于区分不同类型的 LLM 调用
         """
+        from utils.execution_scope import check_cancelled
+        check_cancelled()
         active_deployment_id = ""  # 本次调用实际使用的部署（多部署路由时非空），异常时用于冷却标记
         try:
             def _emit_stream_chunk(kind: str, text: str, current_model: str):
@@ -1385,7 +1423,9 @@ class SimpleLLMClient:
                 kwargs["tools"] = tools_definition
                 if tool_choice == "required":
                     kwargs["tool_choice"] = "required"
-                kwargs["parallel_tool_calls"] = False
+                parallel = model_extra_params.get("parallel_tool_calls") if isinstance(model_extra_params, dict) else None
+                if parallel is not None:
+                    kwargs["parallel_tool_calls"] = bool(parallel)
             # 注意：当 tools_definition 为空时，即使 tool_choice="none" 也不添加任何参数
             # 这避免了 API 错误：When using `tool_choice`, `tools` must be set
 
@@ -2220,7 +2260,7 @@ JSON 格式要求：
                     "function": {
                         "name": tool_config.get("name", tool_name),
                         "description": tool_config.get("description", ""),
-                        "parameters": tool_config.get("parameters", {})
+                        "parameters": tool_config.get("parameters") or {"type": "object", "properties": {}}
                     }
                 })
         

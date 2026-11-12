@@ -426,6 +426,34 @@ def reset_task_state(
     if not task_id:
         return False, {"error": "缺少 task_id"}
 
+    killed_pid = None
+    running_meta = get_running_task(task_id)
+    if running_meta:
+        pid = int(running_meta.get('pid') or 0)
+        expected = running_meta.get('process_created')
+        if not kill_background_processes or pid == os.getpid() or expected is None:
+            return False, {'error': 'Task is running; stop it before resetting', 'code': 'TASK_RUNNING'}
+        import psutil
+        try:
+            process = psutil.Process(pid)
+            if abs(process.create_time() - float(expected)) >= .001:
+                return False, {'error': 'Process identity changed', 'code': 'PROCESS_CHANGED'}
+            process.terminate()
+            process.wait(timeout=3)
+            killed_pid = pid
+        except psutil.NoSuchProcess:
+            pass
+        except (psutil.AccessDenied, psutil.TimeoutExpired):
+            return False, {'error': 'Task did not stop; state was not reset', 'code': 'TASK_RUNNING'}
+
+    from utils.task_owner import task_owner
+    with task_owner(task_id) as owned:
+        if not owned:
+            return False, {'error': 'Task is owned by another run', 'code': 'TASK_RUNNING'}
+        return _reset_idle_task_state(task_id, preserve_history, kill_background_processes, reason, killed_pid)
+
+
+def _reset_idle_task_state(task_id, preserve_history, kill_background_processes, reason, killed_pid):
     manager = get_hierarchy_manager(task_id)
     with manager._state_lock():
         context = manager._load_context()
@@ -477,19 +505,9 @@ def reset_task_state(
         except FileNotFoundError:
             pass
 
-    killed_pid = None
-    running_meta = get_running_task(task_id)
-    if kill_background_processes and running_meta:
-        pid = int(running_meta.get("pid") or 0)
-        if pid > 0:
-            try:
-                os.kill(pid, signal.SIGTERM)
-                killed_pid = pid
-            except ProcessLookupError:
-                pass
-            except Exception:
-                pass
-
+    from utils.atomic_state import write_json
+    import uuid
+    write_json(Path(task_id) / '.sdk_runtime' / 'generation.json', {'id': uuid.uuid4().hex})
     return True, {
         "task_id": task_id,
         "preserve_history": bool(preserve_history),

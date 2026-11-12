@@ -172,7 +172,20 @@ class ConfigLoader:
                 },
             },
         )
-        # （公开版）程序图工具族不随本仓库分发，相关兜底注入已移除。
+        from utils.user_paths import get_project_root
+        definitions = get_project_root() / "config" / "orchestration_tools.yaml"
+        if definitions.is_file():
+            for name, definition in (yaml.safe_load(definitions.read_text(encoding="utf-8")) or {}).get("tools", {}).items():
+                self.all_tools.setdefault(name, definition)
+        for definition in self.all_tools.values():
+            if definition.get("type") == "llm_call_agent":
+                schema = definition.setdefault("parameters", {"type": "object", "properties": {}})
+                if 'required' in schema:
+                    schema['required'] = [name for name in schema['required'] if name != 'task_id']
+                schema.setdefault("properties", {}).setdefault("_background", {
+                    "type": "boolean", "description": "Return a handle immediately; collect the child result later."})
+                schema["properties"].setdefault("_context_mode", {"type": "string", "enum": ["tool", "fresh", "inherit"]})
+        # The public runtime has no enterprise program/data-source subsystems.
     
     def get_tool_config(self, tool_name: str) -> Dict:
         """

@@ -76,10 +76,10 @@ class ReasoningModeTests(unittest.TestCase):
 
         executor.reasoning_mode = "react_lite"
         self.assertFalse(executor._should_run_react_reflection())
-        self.assertTrue(executor._tool_call_required_for_response())
-        self.assertEqual(executor._execution_tool_choice_override(), "required")
+        self.assertFalse(executor._tool_call_required_for_response())
+        self.assertEqual(executor._execution_tool_choice_override(), "auto")
 
-    def test_react_lite_execution_call_forces_required_tool_choice(self):
+    def test_react_lite_execution_call_allows_auto_tool_choice(self):
         executor = self._bare_executor()
         executor.reasoning_mode = "react_lite"
         captured = {}
@@ -109,8 +109,8 @@ class ReasoningModeTests(unittest.TestCase):
             tool_choice=executor._execution_tool_choice_override(),
         )
 
-        self.assertEqual(captured["tool_choice"], "required")
-        self.assertEqual(executor.execution_traces[-1]["tool_choice"], "required")
+        self.assertEqual(captured["tool_choice"], "auto")
+        self.assertEqual(executor.execution_traces[-1]["tool_choice"], "auto")
 
     def test_agent_thinking_enabled_legacy_config_overrides_runtime_default_mode(self):
         executor = self._bare_executor()

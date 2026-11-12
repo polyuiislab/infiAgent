@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>InfiAgent Token 用量</title>
+<style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffdf8;
+      --line: #ddd2bf;
+      --grid: #ebe3d4;
+      --text: #1e2430;
+      --muted: #746f64;
+      --accent: #135ef2;
+      --cached: #8fb3e0;
+      --output: #c2410c;
+      --warn: #b45309;
+      --red: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 12px 22px;
+      background: rgba(255, 253, 248, 0.96);
+      border-bottom: 1px solid var(--line);
+    }
+    header h1 { margin: 0 6px 0 0; font-size: 18px; }
+    .spacer { flex: 1; }
+    select, button, input {
+      font: inherit;
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--text);
+    }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+    button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); }
+    .seg button:last-child { border-right: 0; }
+    .seg button.on { background: var(--text); color: #ffffff; }
+    label.field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    #status { font-size: 12px; color: var(--muted); }
+    main { padding: 18px 22px 60px; max-width: 1240px; margin: 0 auto; display: grid; gap: 16px; }
+    .notes { font-size: 12px; color: var(--muted); display: flex; gap: 6px 16px; flex-wrap: wrap; }
+    .notes .warn { color: var(--warn); }
+    .notes .error { color: var(--red); }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+    .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+    .kpi .name { font-size: 12px; color: var(--muted); }
+    .kpi .value { font-size: 24px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+    section.panel h2 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); font-weight: 400; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+    .chart { overflow-x: auto; }
+    .chart svg { display: block; }
+    .chart text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+    .table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 7px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    th:first-child, td:first-child { text-align: left; }
+    th { font-size: 12px; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+    td.text { text-align: left; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+    .foot { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+    .empty.error { color: var(--red); }
+    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    @media (max-width: 1000px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+<header>
+<h1>Token 用量</h1>
+<div aria-label="快捷时段" class="seg" id="presets" role="group">
+<button data-preset="today" type="button">今天</button>
+<button data-preset="24h" type="button">近 24 小时</button>
+<button data-preset="7d" type="button">近 7 天</button>
+<button data-preset="30d" type="button">近 30 天</button>
+<button data-preset="month" type="button">本月</button>
+</div>
+<label class="field">从 <input id="from" step="3600" type="datetime-local"/></label>
+<label class="field">到 <input id="to" step="3600" type="datetime-local"/></label>
+<label class="field">粒度
+      <select id="granularity">
+<option value="hour">小时</option>
+<option value="day">天</option>
+<option value="week">周</option>
+<option value="month">月</option>
+<option value="total">汇总</option>
+</select>
+</label>
+<label class="field">分组
+      <select id="groupBy">
+<option value="">不分组</option>
+<option value="model">模型</option>
+<option value="agent_system">Agent 系统</option>
+<option value="agent_name">Agent</option>
+<option value="purpose">用途</option>
+<option value="user">用户</option>
+<option value="task">任务</option>
+</select>
+</label>
+<label class="field">Agent 系统 <select id="agentSystem"><option value="">全部</option></select></label>
+<label class="field">模型 <select id="model"><option value="">全部</option></select></label>
+<button class="primary" id="refreshBtn" type="button">刷新</button>
+<span id="status"></span>
+<span class="spacer"></span>
+<a href="/index.html" style="font-size:13px">← 返回控制台</a>
+</header>
+<main id="content"><div class="empty">加载中…</div></main>
+<script src="/static/request_auth.js"></script><script>
+    const $ = (id) => document.getElementById(id);
+    const PURPOSE_LABEL = {
+      execution: "主循环",
+      thinking: "思考",
+      react_reflection: "ReAct 反思",
+      action_compressor: "动作历史压缩",
+      context_builder: "上下文压缩",
+    };
+    const GROUP_LABEL = { model: "模型", agent_system: "Agent 系统", agent_name: "Agent", purpose: "用途", user: "用户", task: "任务" };
+    const COLORS = { cached: "#8fb3e0", uncached: "#135ef2", output: "#c2410c" };
+    const state = { preset: "7d", seq: 0 };
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+    function fmtInt(n) { return Number(n || 0).toLocaleString("zh-CN"); }
+    function fmtCompact(n) {
+      const v = Number(n || 0);
+      const one = (x) => (x >= 10 ? x.toFixed(0) : x.toFixed(1).replace(/\.0$/, ""));
+      if (v >= 1e9) return `${one(v / 1e9)}B`;
+      if (v >= 1e6) return `${one(v / 1e6)}M`;
+      if (v >= 1e3) return `${one(v / 1e3)}K`;
+      return String(Math.round(v));
+    }
+    function fmtRate(r) { return r == null ? "—" : `${(r * 100).toFixed(1)}%`; }
+    function fmtCost(c, currency) {
+      if (c == null) return "—";
+      const v = Number(c);
+      return `${currency ? `${currency} ` : ""}${v.toFixed(v !== 0 && Math.abs(v) < 1 ? 4 : 2)}`;
+    }
+    function pad(n) { return String(n).padStart(2, "0"); }
+    function toInput(dt) { return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:00`; }
+
+    function markPreset() {
+      document.querySelectorAll("#presets button").forEach((btn) => btn.classList.toggle("on", btn.dataset.preset === state.preset));
+    }
+    function applyPreset(name) {
+      const now = new Date();
+      const hour = new Date(now); hour.setMinutes(0, 0, 0);
+      const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+      let from = day0;
+      let granularity = "day";
+      if (name === "today") { granularity = "hour"; }
+      else if (name === "24h") { from = new Date(hour.getTime() - 23 * 3600e3); granularity = "hour"; }
+      else if (name === "7d") { from = new Date(day0.getTime() - 6 * 86400e3); }
+      else if (name === "30d") { from = new Date(day0.getTime() - 29 * 86400e3); }
+      else if (name === "month") { from = new Date(now.getFullYear(), now.getMonth(), 1); }
+      $("from").value = toInput(from);
+      $("to").value = toInput(hour);
+      $("granularity").value = granularity;
+      state.preset = name;
+      markPreset();
+    }
+
+    function query(extra) {
+      const p = new URLSearchParams();
+      if ($("from").value) p.set("from", $("from").value);
+      if ($("to").value) p.set("to", $("to").value);
+      if ($("agentSystem").value) p.set("agent_system", $("agentSystem").value);
+      if ($("model").value) p.set("model", $("model").value);
+      for (const [key, value] of Object.entries(extra || {})) {
+        if (value !== "" && value != null) p.set(key, value);
+      }
+      return p.toString();
+    }
+    async function getJson(url) {
+      const res = await fetch(url, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || `请求失败（HTTP ${res.status}）`);
+      return body;
+    }
+    async function load(refresh) {
+      const seq = ++state.seq;
+      $("status").textContent = "加载中…";
+      try {
+        const [summary, tasks] = await Promise.all([
+          getJson(`/api/v1/usage?${query({ granularity: $("granularity").value, group_by: $("groupBy").value, refresh: refresh ? "true" : "" })}`),
+          getJson(`/api/v1/usage/tasks?${query({ limit: "15" })}`),
+        ]);
+        if (seq !== state.seq) return;
+        render(summary, tasks);
+        $("status").textContent = "";
+      } catch (err) {
+        if (seq !== state.seq) return;
+        $("status").textContent = "";
+        $("content").innerHTML = `<div class="empty error">${esc(err.message)}</div>`;
+      }
+    }
+
+    function fillSelect(id, values, labeler) {
+      const select = $(id);
+      const current = select.value;
+      const options = ['<option value="">全部</option>'];
+      for (const value of values) {
+        if (value === "") continue;
+        options.push(`<option value="${esc(value)}">${esc(labeler ? labeler(value) : value)}</option>`);
+      }
+      select.innerHTML = options.join("");
+      if ([...select.options].some((o) => o.value === current)) select.value = current;
+    }
+
+    function bucketLabel(key, granularity) {
+      if (granularity === "hour") return `${key.slice(5, 10)} ${key.slice(11, 13)}时`;
+      if (granularity === "day") return key.slice(5);
+      if (granularity === "week") return key.replace(/^\d{4}-/, "");
+      if (granularity === "month") return key;
+      return "合计";
+    }
+    function bucketTitle(bucket, granularity) {
+      if (granularity === "hour") return `${bucket.key.slice(0, 10)} ${bucket.key.slice(11, 13)}:00`;
+      if (granularity === "week") return `${bucket.key}（${bucket.start.slice(0, 10)} 起）`;
+      if (granularity === "total") return "合计";
+      return bucket.key;
+    }
+    function groupLabel(item, by) {
+      const key = item.key || "";
+      if (by === "purpose") return PURPOSE_LABEL[key] || key || "（未记录）";
+      if (by === "task") return item.label || key;
+      if (by === "user") return key || "（未设置）";
+      if (by === "model") return key || "（未记录模型）";
+      return key || "（未记录）";
+    }
+
+    // 刻度步长只取 1 / 2 / 5 × 10^k，标签才是整数（10M、20M…），不会出现 13M、38M
+    function niceStep(raw) {
+      const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+      const f = raw / exp;
+      return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * exp;
+    }
+    function chartSvg(buckets, granularity, available) {
+      const n = buckets.length;
+      const H = 280, top = 14, bottom = 40, left = 64, right = 16;
+      const slot = Math.max(12, Math.min(120, Math.floor((available - left - right) / Math.max(1, n))));
+      const W = left + right + slot * n;
+      const stacks = buckets.map((b) => [b.totals.cached_input_tokens, b.totals.uncached_input_tokens + b.totals.cache_write_tokens, b.totals.output_tokens]);
+      const maxValue = Math.max(1, ...stacks.map((s) => s[0] + s[1] + s[2]));
+      const step = niceStep(maxValue / 4);
+      const tickCount = Math.max(1, Math.ceil(maxValue / step));
+      const topValue = step * tickCount;
+      const plotH = H - top - bottom;
+      const y = (v) => top + plotH - (v / topValue) * plotH;
+      const parts = [];
+      for (let i = 0; i <= tickCount; i += 1) {
+        const v = step * i;
+        const yy = y(v);
+        parts.push(`<line x1="${left}" x2="${W - right}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" stroke="#ebe3d4" />`);
+        parts.push(`<text x="${left - 8}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${fmtCompact(v)}</text>`);
+      }
+      const barWidth = Math.max(6, Math.min(56, Math.round(slot * 0.64)));
+      const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((W - left - right) / 64))));
+      buckets.forEach((bucket, i) => {
+        const x = left + i * slot + (slot - barWidth) / 2;
+        const [cached, uncached, output] = stacks[i];
+        let base = 0;
+        const seg = (value, color) => {
+          if (value <= 0) return "";
+          const y1 = y(base + value);
+          const y0 = y(base);
+          base += value;
+          return `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${barWidth}" height="${Math.max(0.5, y0 - y1).toFixed(1)}" fill="${color}" />`;
+        };
+        const tip = `${bucketTitle(bucket, granularity)}\n缓存命中输入 ${fmtInt(cached)}\n未命中输入 ${fmtInt(uncached)}\n输出 ${fmtInt(output)}\n调用 ${fmtInt(bucket.totals.calls)} 次`;
+        parts.push(`<g><title>${esc(tip)}</title><rect x="${(left + i * slot).toFixed(1)}" y="${top}" width="${slot}" height="${plotH}" fill="transparent" />${seg(cached, COLORS.cached)}${seg(uncached, COLORS.uncached)}${seg(output, COLORS.output)}</g>`);
+        if (i % every === 0) {
+          parts.push(`<text x="${(left + i * slot + slot / 2).toFixed(1)}" y="${H - bottom + 16}" text-anchor="middle">${esc(bucketLabel(bucket.key, granularity))}</text>`);
+        }
+      });
+      parts.push(`<line x1="${left}" x2="${W - right}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="#cfc5b2" />`);
+      return `<svg role="img" aria-label="各时段输入（缓存命中 / 未命中）与输出 token 的堆叠柱状图" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
+    }
+
+    function metricHead(showCost) {
+      return `<th>调用</th><th>输入</th><th>缓存命中</th><th>命中率</th><th>输出</th><th>其中思考</th><th>总计</th>${showCost ? "<th>费用</th>" : ""}`;
+    }
+    function metricCells(m, showCost, currency) {
+      return `<td>${fmtInt(m.calls)}</td><td>${fmtInt(m.input_tokens)}</td><td>${fmtInt(m.cached_input_tokens)}</td><td>${fmtRate(m.cache_hit_rate)}</td>`
+        + `<td>${fmtInt(m.output_tokens)}</td><td>${fmtInt(m.reasoning_tokens)}</td><td>${fmtInt(m.total_tokens)}</td>${showCost ? `<td>${fmtCost(m.cost, currency)}</td>` : ""}`;
+    }
+    function kpi(name, value, sub) {
+      return `<div class="kpi"><div class="name">${esc(name)}</div><div class="value">${value}</div><div class="sub">${sub ? esc(sub) : "&nbsp;"}</div></div>`;
+    }
+
+    function render(s, tasks) {
+      fillSelect("agentSystem", (s.dimensions && s.dimensions.agent_system) || []);
+      fillSelect("model", (s.dimensions && s.dimensions.model) || []);
+      const t = s.totals;
+      const pricing = s.pricing || {};
+      const currency = pricing.currency || "";
+      const showCost = Boolean(pricing.configured) || t.cost != null;
+      const g = s.granularity;
+
+      const notes = [
+        `<span>时区：${esc(s.timezone || "服务器本地")}</span>`,
+        `<span>范围：${esc(s.range.from.replace("T", " "))}:00 至 ${esc(s.range.to.replace("T", " "))}:00（不含）</span>`,
+        `<span>账本更新于 ${esc((s.ledger && s.ledger.refreshed_at) || "—")}</span>`,
+      ];
+      if (t.calls_without_usage) notes.push(`<span class="warn">其中 ${fmtInt(t.calls_without_usage)} 次调用没有用量记录</span>`);
+      if (!pricing.configured) notes.push(`<span>未配置单价（config/usage_pricing.yaml），费用只显示供应商回报的金额</span>`);
+      if (pricing.error) notes.push(`<span class="error">${esc(pricing.error)}</span>`);
+      if (pricing.configured && (pricing.unpriced_models || []).length) {
+        notes.push(`<span class="warn">未配单价的模型：${esc(pricing.unpriced_models.map((m) => m || "（未记录模型）").join("、"))}</span>`);
+      }
+
+      const kpis = [
+        kpi("调用次数", fmtInt(t.calls), t.calls_without_usage ? `${fmtInt(t.calls_without_usage)} 次无用量记录` : "全部有用量记录"),
+        kpi("输入 tokens", fmtCompact(t.input_tokens), `${fmtInt(t.input_tokens)} · 未命中 ${fmtCompact(t.uncached_input_tokens)}`),
+        kpi("缓存命中率", fmtRate(t.cache_hit_rate), `命中 ${fmtInt(t.cached_input_tokens)} tokens`),
+        kpi("输出 tokens", fmtCompact(t.output_tokens), `其中思考 ${fmtCompact(t.reasoning_tokens)}`),
+        kpi("总计 tokens", fmtCompact(t.total_tokens), fmtInt(t.total_tokens)),
+        kpi("费用", showCost ? fmtCost(t.cost, currency) : "—", showCost ? (pricing.configured ? "按 usage_pricing.yaml 计算" : "供应商回报金额") : "未配置单价"),
+      ].join("");
+
+      if (!t.calls) {
+        $("content").innerHTML = `<div class="notes">${notes.join("")}</div><div class="kpis">${kpis}</div><section class="panel"><div class="empty">这个时段没有 LLM 调用记录</div></section>`;
+        return;
+      }
+
+      const legend = `<span class="legend"><span><i style="background:${COLORS.cached}"></i>缓存命中输入</span><span><i style="background:${COLORS.uncached}"></i>未命中输入</span><span><i style="background:${COLORS.output}"></i>输出（含思考）</span></span>`;
+      const chart = `<section class="panel"><h2>各时段用量 ${legend}</h2><div class="chart">${chartSvg(s.buckets, g, Math.max(480, ($("content").clientWidth || 1100) - 60))}</div></section>`;
+
+      const nonEmpty = s.buckets.filter((b) => b.totals.calls > 0).slice().reverse();
+      const emptyCount = s.buckets.length - nonEmpty.length;
+      const bucketRows = nonEmpty.map((b) => `<tr><td>${esc(bucketTitle(b, g))}</td>${metricCells(b.totals, showCost, currency)}</tr>`).join("");
+      const bucketTable = `<section class="panel"><h2>按时段明细</h2><div class="table-wrap"><table><thead><tr><th>时段</th>${metricHead(showCost)}</tr></thead><tbody>${bucketRows}</tbody>`
+        + `<tfoot><tr><th>合计</th>${metricCells(t, showCost, currency).replace(/<td>/g, "<th>").replace(/<\/td>/g, "</th>")}</tr></tfoot></table></div>`
+        + `${emptyCount ? `<div class="foot">另有 ${emptyCount} 个时段没有调用，未列出。</div>` : ""}</section>`;
+
+      let groupTable = "";
+      if (s.group_by) {
+        const rows = (s.groups || []).map((item) => `<tr><td class="text" title="${esc(item.key)}">${esc(groupLabel(item, s.group_by))}</td>${metricCells(item, showCost, currency)}</tr>`).join("");
+        groupTable = `<section class="panel"><h2>按${esc(GROUP_LABEL[s.group_by] || s.group_by)}汇总</h2><div class="table-wrap"><table><thead><tr><th>${esc(GROUP_LABEL[s.group_by] || "分组")}</th>${metricHead(showCost)}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+      }
+
+      const taskRows = (tasks.items || []).map((item) => `<tr><td class="text" title="${esc(item.task_id || item.key)}">${esc(item.label || item.key)}</td>`
+        + `<td class="text">${esc(item.agent_system || "—")}</td><td class="text">${esc(item.user_id || "—")}</td>${metricCells(item, showCost, currency)}`
+        + `<td>${esc((item.last_hour || "").replace("T", " "))}${item.last_hour ? ":00" : ""}</td></tr>`).join("");
+      const taskTable = `<section class="panel"><h2>消耗最多的任务（前 ${fmtInt((tasks.items || []).length)} / 共 ${fmtInt(tasks.count || 0)}）</h2><div class="table-wrap"><table><thead><tr><th>任务</th><th>Agent 系统</th><th>用户</th>${metricHead(showCost)}<th>最近</th></tr></thead><tbody>${taskRows}</tbody></table></div></section>`;
+
+      $("content").innerHTML = `<div class="notes">${notes.join("")}</div><div class="kpis">${kpis}</div>${chart}`
+        + (groupTable ? `<div class="grid2">${bucketTable}${groupTable}</div>` : bucketTable) + taskTable;
+    }
+
+    document.querySelectorAll("#presets button").forEach((btn) => btn.addEventListener("click", () => { applyPreset(btn.dataset.preset); load(false); }));
+    ["from", "to"].forEach((id) => $(id).addEventListener("change", () => { state.preset = ""; markPreset(); load(false); }));
+    ["granularity", "groupBy", "agentSystem", "model"].forEach((id) => $(id).addEventListener("change", () => load(false)));
+    $("refreshBtn").addEventListener("click", () => load(true));
+    applyPreset("7d");
+    load(true);
+  </script>
+</body>
+</html>

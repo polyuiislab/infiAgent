@@ -1,59 +1,18 @@
+# Configure these fields in the developer console, or edit this file.
+base_url: ""
+api_key: ""
+models:
+  - name: openai/your-model
+    tool_choice: auto
+thinking_models: []
+compressor_models: []
+read_figure_models: []
+figure_models: []
 temperature: 0
 max_tokens: 0
-max_context_window: 500000
-
-base_url: https://openrouter.ai/api/v1
-api_key: ""
-
+max_context_window: 128000
 timeout: 600
-stream_timeout: 30
-first_chunk_timeout: 30
-
-tool_choice:
-  execution: auto
-  thinking: auto
-  compressor: auto
-  image_generation: auto
-  read_figure: auto
-
-models:
-  - name: openrouter/qwen/qwen3.6-plus
-    default: true
-    tool_choice: auto
-
-figure_models:
-  - name: openrouter/qwen/qwen3.6-plus
-    default: true
-    tool_choice: auto
-
-compressor_models:
-  - name: openrouter/qwen/qwen3.6-plus
-    default: true
-    tool_choice: auto
-
-thinking_models:
-  - name: openrouter/qwen/qwen3.6-plus
-    default: true
-    tool_choice: auto
-
-read_figure_models:
-  - name: openrouter/qwen/qwen3.6-plus
-    default: true
-    tool_choice: auto
-
-multimodal: true
-compressor_multimodal: true
-
-# ===== 多部署路由（3.12.21+，可选）=====
-# 同一逻辑模型挂多平台/多密钥：健康时恒用第一个部署（保 prompt cache 命中），
-# 失败自动冷却切换下一个，冷却到期自动切回主部署。老单密钥格式完全兼容。
-# models:
-#   - name: deepseek-v4-flash            # 逻辑别名
-#     default: true
-#     deployments:                        # 顺序 = 优先级
-#       - model: openrouter/deepseek/deepseek-v4-flash
-#         api_key: sk-or-...
-#       - model: openai/deepseek-v4-flash        # openai 兼容端点必须写 base_url
-#         base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-#         api_key: sk-...
-# deployment_cooldown_seconds: 120        # 顶层可选，故障冷却时长
+stream_timeout: 60
+first_chunk_timeout: 60
+multimodal: false
+compressor_multimodal: false

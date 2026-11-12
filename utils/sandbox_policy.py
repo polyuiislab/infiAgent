@@ -198,7 +198,8 @@ def command_effective_engine() -> str:
 
 
 def resolve_task_path(task_id: str, path_value: str, *, allow_empty: bool = False) -> Path:
-    root = Path(str(task_id or "")).expanduser().resolve()
+    from utils.workspaces import files_root
+    root = files_root(task_id)
     raw_text = str(path_value or "").strip()
     if not raw_text:
         if allow_empty:

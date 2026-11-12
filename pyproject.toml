@@ -1,3 +1,6 @@
 [build-system]
 requires = ["setuptools>=69,<75", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+markers = ["unit: local unit tests"]

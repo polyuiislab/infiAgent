@@ -37,6 +37,8 @@ def serialize_agent_event(event: AgentEvent) -> Dict[str, Any]:
         payload = _normalize_event_value(asdict(event))
     else:
         payload = {}
+    if getattr(event, 'agent_name', None):
+        payload.setdefault('agent_name', event.agent_name)
 
     return {
         "event_type": event_type,

@@ -29,6 +29,9 @@ def _get_state_thread_lock(lock_file: Path) -> threading.RLock:
         return _state_thread_locks[lock_key]
 
 
+from utils.atomic_state import write_json, StateCommitError, StateCorruptError
+from utils.execution_scope import CURRENT
+
 class HierarchyManager:
     """Agent层级管理器"""
     
@@ -109,7 +112,7 @@ class HierarchyManager:
                     fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
                 locked = True
             except Exception as e:
-                safe_print(f"⚠️ 获取任务状态文件锁失败，将继续执行: {e}")
+                raise StateCommitError('Cannot acquire task state lock') from e
 
             try:
                 yield
@@ -134,31 +137,18 @@ class HierarchyManager:
                 yield
 
     def _atomic_write_json(self, path: Path, data):
-        tmp_path = path.with_name(
-            f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
-        )
-        try:
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, path)
-        finally:
-            try:
-                if tmp_path.exists():
-                    tmp_path.unlink()
-            except Exception:
-                pass
-    
+        write_json(path, data)
+
     def _load_stack(self) -> List[Dict]:
         """加载当前栈状态"""
         try:
             with open(self.stack_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 return data.get("stack", [])
-        except Exception as e:
-            safe_print(f"⚠️ 加载栈文件失败: {e}")
+        except FileNotFoundError:
             return []
+        except Exception as e:
+            raise StateCorruptError("Cannot read agent stack") from e
     
     def _save_stack(self, stack: List[Dict]):
         """保存栈状态"""
@@ -168,15 +158,14 @@ class HierarchyManager:
                 "last_updated": datetime.now().isoformat()
             })
         except Exception as e:
-            safe_print(f"⚠️ 保存栈文件失败: {e}")
+            raise StateCommitError("Cannot save agent stack") from e
     
     def _load_context(self) -> Dict:
         """加载共享上下文"""
         try:
             with open(self.context_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except Exception as e:
-            safe_print(f"⚠️ 加载共享上下文失败: {e}")
+        except FileNotFoundError:
             return {
                 "task_id": self.task_id,
                 "current": {
@@ -188,13 +177,16 @@ class HierarchyManager:
                 "history": []
             }
 
+        except Exception as e:
+            raise StateCorruptError("Cannot read shared context") from e
+
     def _save_context(self, context: Dict):
         """保存共享上下文"""
         try:
             context["last_updated"] = datetime.now().isoformat()
             self._atomic_write_json(self.context_file, context)
         except Exception as e:
-            safe_print(f"⚠️ 保存共享上下文失败: {e}")
+            raise StateCommitError("Cannot save shared context") from e
 
     def _new_current_context(self) -> Dict:
         return {
@@ -311,6 +303,9 @@ class HierarchyManager:
             
             # 生成agent_id
             content_for_hash = f"{agent_name}|{self.task_id}|{user_input}"
+            scope = CURRENT.get()
+            if scope and scope.instance_key:
+                content_for_hash += f"|{scope.parent_id}|{scope.instance_key}"
             hash_object = hashlib.md5(content_for_hash.encode())
             agent_hash = hash_object.hexdigest()[:12]
             agent_id = f"{agent_name}_{agent_hash}"
@@ -349,7 +344,11 @@ class HierarchyManager:
             # 获取父Agent（栈顶）
             parent_id = None
             level = 0
-            if stack:
+            if scope is not None:
+                parent_id = scope.parent_id
+                parent = next((entry for entry in stack if entry['agent_id'] == parent_id), None)
+                level = parent['level'] + 1 if parent else 0
+            elif stack:
                 parent_id = stack[-1]["agent_id"]
                 level = stack[-1]["level"] + 1
             
@@ -565,6 +564,9 @@ class HierarchyManager:
     
     def get_current_agent_id(self) -> Optional[str]:
         """获取当前栈顶的Agent ID"""
+        scope = CURRENT.get()
+        if scope and scope.agent_id and scope.task_id == str(Path(self.task_id).resolve()):
+            return scope.agent_id
         stack = self._load_stack()
         return stack[-1]["agent_id"] if stack else None
 

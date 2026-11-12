@@ -12,6 +12,7 @@ from typing import Dict, List
 from datetime import datetime
 
 from utils.user_paths import get_user_conversations_dir
+from utils.atomic_state import write_json, StateCommitError, StateCorruptError
 
 
 class ConversationStorage:
@@ -82,11 +83,10 @@ class ConversationStorage:
                 "last_updated": datetime.now().isoformat()
             }
             
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+            write_json(filepath, data)
         
         except Exception as e:
-            print(f"⚠️ 保存对话历史失败: {e}")
+            raise StateCommitError(f"Cannot save conversation: {filepath}") from e
     
     def load_actions(self, task_id: str, agent_id: str) -> Dict:
         """
@@ -112,8 +112,7 @@ class ConversationStorage:
             return data
         
         except Exception as e:
-            print(f"⚠️ 加载对话历史失败: {e}")
-            return None
+            raise StateCorruptError(f"Cannot load conversation: {filepath}") from e
 
 
 if __name__ == "__main__":

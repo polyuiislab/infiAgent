@@ -24,7 +24,6 @@ tools:
       - final_output
       - execute_command
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是一个通用的 AI 助手，可以撰写论文，和用户对话，调研，科学研究等等工作。
@@ -81,7 +80,6 @@ tools:
       - reference_add
       - reference_delete
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你是一名拥有顶级智库背景的高级研究员。你的目标是生成一份篇幅超过 10,000 字、逻辑严密、数据详实且具有颠覆性洞察的 Markdown 格式研究报告。你不仅要回答“是什么”，更要通过严谨的因果推导分析“为什么”和“未来会怎样”。
@@ -142,7 +140,6 @@ tools:
       - reference_add
       - reference_delete
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你是一个专业的学术报告撰写大师，你必须结合文件空间所有已知材料完成详细的不少于 10000 字的调研报告。

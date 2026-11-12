@@ -7,10 +7,14 @@ MLA V3 - Multi-Level Agent System
 
 from setuptools import setup, find_packages
 from pathlib import Path
+import re
 
 # 读取 README
 readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding='utf-8') if readme_file.exists() else ""
+long_description = re.sub(r'!\[([^\]]*)\]\((assets/[^)]+)\)', r'![\1](https://raw.githubusercontent.com/polyuiislab/infiAgent/main/\2)', long_description)
+long_description = re.sub(r'\]\(((?:docs/|README|LICENSE)[^)]+|LICENSE)\)', r'](https://github.com/polyuiislab/infiAgent/blob/main/\1)', long_description)
+
 
 # 读取依赖
 requirements_file = Path(__file__).parent / "requirements.txt"
@@ -55,18 +59,19 @@ data_files.extend(_collect_data_files(project_root / "skills", "skills"))
 
 setup(
     name="infiagent",
-    version="3.12.24",
+    version="3.13.0",
     author="Chenglin Yu",
     author_email="yuchenglin96@qq.com",
-    license="MIT",
+    license="GPL-3.0-only",
     description="InfiAgent multi-agent framework for long-running task automation",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ChenglinPoly/Multi-Level-Agent",
+    url="https://github.com/polyuiislab/infiAgent",
     packages=find_packages(
         include=[
             'core',
             'infiagent',
+            'infiagent.runtime',
             'services',
             'tool_server_lite',
             'tool_server_lite.tools',
@@ -76,26 +81,27 @@ setup(
     py_modules=['start'],
     include_package_data=True,
     package_data={
+        'infiagent.runtime': ['static/*.html', 'static/*.css', 'static/*.js', 'static/*.png'],
         'tool_server_lite': ['requirements.txt'],
         'tool_server_lite.tools': ['*.md', '*.txt'],
     },
     data_files=data_files,
-    license_files=(),
+    license_files=("LICENSE",),
     install_requires=requirements,
-    python_requires='>=3.9',
+    python_requires='>=3.10',
     entry_points={
         'console_scripts': [
             'infiagent=start:main',
             'mla-agent=start:main',
+            'infiagent-runtime=infiagent.runtime.server:main',
         ],
     },
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',

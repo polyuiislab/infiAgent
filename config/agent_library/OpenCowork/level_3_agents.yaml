@@ -28,11 +28,6 @@ tools:
       - reference_delete
       - sub_agent
     max_turns: 100
-    execution_model: openai/google/gemini-3-flash-preview
-    thinking_model: openai/google/gemini-3-flash-preview
-    compressor_model: openai/google/gemini-3-flash-preview
-    image_generation_model: openai/google/gemini-3-flash-preview
-    read_figure_model: openai/google/gemini-3-flash-preview
     prompts:
       agent_responsibility: |
         你的职责是一个通用的 AI 助手, 是cowork的主要智能体。
@@ -81,7 +76,6 @@ tools:
       - reference_add
       - reference_delete
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是一个通用的 AI 助手, 是由上级调用的子智能体，完成一些比较独立的工作。

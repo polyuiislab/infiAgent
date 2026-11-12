@@ -84,8 +84,8 @@ class LLMClientLite:
         self.default_models.setdefault("compressor", self.compressor_models[0] if self.compressor_models else "")
         self.default_models.setdefault("read_figure", self.read_figure_models[0] if self.read_figure_models else "")
         
-        if not self.api_key:
-            raise ValueError("未配置API密钥")
+        if not self.api_key and not any(cfg.get('api_key') for cfg in self.model_configs.values()):
+            raise ValueError("未配置API密钥（可配置默认密钥或模型独立密钥）")
         
         if not self.models:
             raise ValueError("未配置可用模型列表")
@@ -117,6 +117,16 @@ class LLMClientLite:
                         default_name = name
         if default_name:
             self.default_models[category] = default_name
+
+    @staticmethod
+    def _record_response_usage(response, model, purpose):
+        from utils.execution_scope import record_usage
+        usage = getattr(response, 'usage', None)
+        if hasattr(usage, 'model_dump'):
+            usage = usage.model_dump()
+        elif usage is not None and not isinstance(usage, dict):
+            usage = dict(usage)
+        record_usage(usage, model=str(model), purpose=purpose)
 
     def resolve_model(self, category: str = "execution", preferred: Optional[str] = None) -> str:
         model_groups = {
@@ -239,7 +249,10 @@ class LLMClientLite:
             if aspect_ratio in ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]:
                 kwargs["extra_body"] = {"image_config": {"aspect_ratio": aspect_ratio}}
 
+        from utils.execution_scope import check_cancelled
+        check_cancelled()
         response = completion(**kwargs)
+        self._record_response_usage(response, model, 'image_generation')
         if not getattr(response, 'choices', None):
             raise Exception("响应格式异常")
 
@@ -313,11 +326,14 @@ class LLMClientLite:
             if aspect_ratio in ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]:
                 extra_body["image_config"] = {"aspect_ratio": aspect_ratio}
 
+        from utils.execution_scope import check_cancelled
+        check_cancelled()
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": content}],
             extra_body=extra_body
         )
+        self._record_response_usage(response, model, 'image_generation')
 
         message = response.choices[0].message
         results = []
@@ -442,6 +458,8 @@ class LLMClientLite:
         
         # 调用LLM
         try:
+            from utils.execution_scope import check_cancelled
+            check_cancelled()
             response = completion(
                 model=model,
                 messages=messages,
@@ -450,6 +468,7 @@ class LLMClientLite:
                 api_base=self._get_model_base_url(model),
                 timeout=300  # 5分钟超时保护
             )
+            self._record_response_usage(response, model, 'read_figure')
             
             # 提取响应
             if response.choices and len(response.choices) > 0:
@@ -489,10 +508,10 @@ class LLMClientLite:
             - 其他 API: 使用 litellm.image_generation() (纯生成) 或 litellm.image_edit() (有参考图)
         """
         if model is None:
-            if self.figure_models:
+            if self.config.get('figure_models') and self.figure_models:
                 model = self.resolve_model("image_generation")
             else:
-                model = "dall-e-3"
+                raise ValueError('请先配置文生图模型（figure_models）')
         
         try:
             has_reference = reference_images and len(reference_images) > 0
@@ -505,6 +524,33 @@ class LLMClientLite:
             # 判断是否是 OpenRouter
             model_base_url = self._get_model_base_url(model)
             is_openrouter = self._is_openrouter_base_url(model_base_url)
+            mode = self.model_configs.get(model, {}).get('image_api', 'auto')
+            tail = model.rsplit('/', 1)[-1]
+            native = mode == 'images' or (mode == 'auto' and not is_openrouter and
+                      model.startswith('openai/') and tail.startswith(('gpt-image', 'dall-e')))
+            if native:
+                if reference_images:
+                    raise ValueError('该图片接口当前只支持文生图；参考图编辑请使用支持图片输入的聊天多模态接口')
+                from litellm import image_generation
+                from utils.execution_scope import check_cancelled
+                check_cancelled()
+                options = {'model': model, 'prompt': prompt, 'n': n, 'size': size,
+                           'api_key': self._get_model_api_key(model), 'api_base': model_base_url, 'timeout': 300}
+                if not tail.startswith('gpt-image'):
+                    options['response_format'] = response_format
+                response = image_generation(**options)
+                self._record_response_usage(response, model, 'image_generation')
+                results = []
+                for item in getattr(response, 'data', []) or []:
+                    encoded = item.get('b64_json') if isinstance(item, dict) else getattr(item, 'b64_json', None)
+                    url = item.get('url') if isinstance(item, dict) else getattr(item, 'url', None)
+                    if encoded:
+                        results.append('data:image/png;base64,' + encoded)
+                    elif url:
+                        results.append(url)
+                if not results:
+                    raise ValueError('图片接口没有返回图片数据')
+                return results[0] if len(results) == 1 else results
             
             if is_openrouter:
                 # OpenRouter: 优先用 LiteLLM completion 统一处理；若当前运行环境/返回结构不稳定，再回退原生 SDK。
@@ -634,6 +680,8 @@ class LLMClientLite:
                 "content": f"以下是音频转录内容：\n\n{transcript_text}\n\n请回答以下问题：{question}"
             }]
             
+            from utils.execution_scope import check_cancelled
+            check_cancelled()
             response = completion(
                 model=model,
                 messages=messages,
@@ -642,6 +690,7 @@ class LLMClientLite:
                 api_base=self._get_model_base_url(model),
                 timeout=300  # 5分钟超时保护
             )
+            self._record_response_usage(response, model, 'audio')
             
             # 提取响应
             if response.choices and len(response.choices) > 0:
@@ -687,6 +736,8 @@ class LLMClientLite:
         
         # 调用LLM
         try:
+            from utils.execution_scope import check_cancelled
+            check_cancelled()
             response = completion(
                 model=model,
                 messages=messages,
@@ -695,6 +746,7 @@ class LLMClientLite:
                 api_base=self._get_model_base_url(model),
                 timeout=300  # 5分钟超时保护
             )
+            self._record_response_usage(response, model, 'tool_text')
             
             # 提取响应
             if response.choices and len(response.choices) > 0:
@@ -712,52 +764,20 @@ _config_file_path: Optional[str] = None
 _config_file_mtime: Optional[float] = None
 
 
+import threading
+_client_lock = threading.RLock()
+_client_cache = {}
+
+
 def get_llm_client(force_reload: bool = False) -> LLMClientLite:
-    """
-    获取LLM客户端单例（支持配置文件热重载）
-    
-    Args:
-        force_reload: 是否强制重新加载配置
-    
-    Returns:
-        LLMClientLite实例
-        
-    Note:
-        - 自动检测配置文件修改时间，如果配置文件被修改，会自动重新加载
-        - 也可以通过 force_reload=True 强制重新加载
-    """
-    global _client_instance, _config_file_path, _config_file_mtime
-    
-    # 确定配置文件路径
-    if _config_file_path is None:
-        _config_file_path = str(ensure_user_llm_config_exists())
-    
-    # 检查配置文件是否存在
-    if not os.path.exists(_config_file_path):
-        if _client_instance is None:
-            raise FileNotFoundError(f"配置文件不存在: {_config_file_path}")
-        # 配置文件不存在但已有实例，返回现有实例
-        return _client_instance
-    
-    # 获取当前配置文件的修改时间
-    current_mtime = os.path.getmtime(_config_file_path)
-    
-    # 判断是否需要重新加载
-    need_reload = (
-        force_reload or 
-        _client_instance is None or 
-        _config_file_mtime is None or 
-        current_mtime != _config_file_mtime
-    )
-    
-    if need_reload:
-        if _config_file_mtime is not None and current_mtime != _config_file_mtime:
-            print(f"🔄 检测到配置文件变化，重新加载配置...")
-        
-        _client_instance = LLMClientLite()
-        _config_file_mtime = current_mtime
-    
-    return _client_instance
+    path = Path(ensure_user_llm_config_exists()).resolve()
+    stat = path.stat()
+    signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns)
+    with _client_lock:
+        previous = _client_cache.get(str(path))
+        if force_reload or previous is None or previous[0] != signature:
+            _client_cache[str(path)] = (signature, LLMClientLite(str(path)))
+        return _client_cache[str(path)][1]
 
 
 def reload_llm_client() -> LLMClientLite:

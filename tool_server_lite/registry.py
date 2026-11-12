@@ -163,7 +163,7 @@ def _external_tool_python_commands() -> List[List[str]]:
         parts = shlex.split(raw)
         if parts:
             return [parts]
-    return [["python"], ["python3"]]
+    return [[sys.executable]]
 
 
 def _format_external_tool_python() -> str:
@@ -493,6 +493,7 @@ class ExternalPythonToolProxy(BaseTool):
                         input=json.dumps(payload, ensure_ascii=False, default=str),
                         capture_output=True,
                         text=True,
+                        encoding='utf-8',
                         timeout=int(os.environ.get("MLA_EXTERNAL_TOOL_TIMEOUT_SEC", "3600") or "3600"),
                         env=env,
                     )
