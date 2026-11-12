@@ -1,12 +1,16 @@
 # 项目延伸 · Project extensions
 
-围绕 InfiAgent 的配置式智能体与运行内核，我们也在开发和使用配套的工程工具与运行平台。
+围绕 InfiAgent 的配置式智能体与运行内核，我们正在推进配套工程工具与运行平台的原型开发和测试。
 
 ## Cosine IDE
 
 Cosine 面向智能体工程开发：内嵌助手理解工程说明，编辑配置、提示词和工具，管理知识与文件，在真实运行环境中试运行，并查看会话过程、输出文件和本地版本记录。
 
 开发者可以把同一工程里的配置、运行镜像和测试样例反复用于验证，减少环境与材料的重复准备。
+
+![Cosine 助手原型](../assets/cosine-assistant.png)
+
+*Cosine 开发界面；原型开发与测试中。*
 
 ## 可复用的测试与修复工作流
 
@@ -25,21 +29,27 @@ flowchart LR
 
 集中查看节点和任务状态，管理配置、版本、权限与数据源，观察用量和 token 配额，并组织告警与备份流程。
 
+![运维控制台配额管理原型](../assets/operations-quotas.png)
+
+*配额管理测试界面；原型开发与测试中。*
+
 ## 高可用运行平台
 
-支持多节点部署、健康检查和可恢复任务的故障接管。相关机制已用于内部部署和故障演练，持续完善部署、升级与恢复流程。
+支持多节点部署、健康检查和可恢复任务的故障接管。当前正在进行原型开发与测试，持续完善部署、升级与恢复流程。
 
-## 当前进展
+## 开发状态
 
 | 方向 | 状态 |
 |---|---|
-| Cosine 工程编辑、助手与容器内试运行 | 已有内部实现与使用 |
-| 复用样例的执行、定位与迭代修复 | 已用于工程验证；效果随任务与测试覆盖范围变化 |
-| 节点、配置、用量、权限与数据源管理 | 已有内部实现与验证 |
-| 多节点运行及任务故障接管 | 已完成内部部署与相应演练 |
-| 更广的环境适配与测试覆盖 | 持续完善 |
+| Cosine 工程编辑、助手与容器内试运行 | 原型开发与测试中 |
+| 复用样例的执行、定位与迭代修复 | 原型开发与测试中 |
+| 节点、配置、用量、权限与数据源管理 | 原型开发与测试中 |
+| 多节点运行及任务故障接管 | 原型开发与测试中 |
+| 更广的环境适配与测试覆盖 | 原型开发与测试中 |
 
 ## English overview
+
+**Status: Prototyping and testing.**
 
 **Cosine IDE** brings assistant-guided editing, project files, knowledge, real runtime execution, artifact inspection, and local version history into the agent development workflow.
 
@@ -47,4 +57,4 @@ flowchart LR
 
 **The operations console** provides node and task visibility, configuration and version management, permissions, data sources, usage, quotas, alerts, and backup workflows.
 
-**The high-availability runtime platform** supports multiple execution nodes, health checks, and recovery of resumable tasks after node failures. These capabilities have internal implementations and deployment validations, with broader environment and test coverage under active development.
+**The high-availability runtime platform** supports multiple execution nodes, health checks, and recovery of resumable tasks after node failures. These extensions are currently in prototyping and testing, with broader environment and test coverage under active development.
