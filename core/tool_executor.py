@@ -12,11 +12,15 @@ import uuid
 import asyncio
 import threading
 import os
+import contextvars
 from typing import Dict, Any, List
 
 from tool_server_lite.registry import get_runtime_registry, get_runtime_registry_failures
 from utils.mcp_manager import call_mcp_tool
 from utils.tool_hooks import trigger_tool_hooks
+from utils.atomic_state import StateCommitError, StateCorruptError
+from utils.execution_scope import CURRENT, TOOL_CALL, check_cancelled
+from utils.agent_activities import AgentActivities
 
 class ToolExecutor:
     """工具执行器 - 统一使用进程内 direct-tools 模式"""
@@ -61,10 +65,78 @@ class ToolExecutor:
         self.agent_name = ""
         self.tool_runtime_defaults = self._load_tool_runtime_defaults()
         self.tool_runtime_defaults_log_mode = self._load_tool_runtime_defaults_log_mode()
+        self.available_agent_tools = None
+        self.activities = None
+        self._activities_lock = threading.RLock()
 
     def set_agent_context(self, *, agent_id: str = "", agent_name: str = ""):
         self.agent_id = str(agent_id or "")
         self.agent_name = str(agent_name or "")
+
+    def child_activities(self, task_id):
+        with self._activities_lock:
+            return self._child_activities_locked(task_id)
+
+    def _child_activities_locked(self, task_id):
+        if self.activities is None:
+            def run_child(name, task_input, context_mode):
+                if self.available_agent_tools is not None and name not in self.available_agent_tools:
+                    return {'status': 'error', 'output': '', 'error_code': 'SCOPE_DENIED',
+                            'error_information': 'Child agent is no longer available to the caller'}
+                config = self.config_loader.get_tool_config(name)
+                return self._execute_sub_agent(name, config, {'task_input': task_input,
+                    '_context_mode': context_mode}, task_id)
+            def messages():
+                return len(self.hierarchy_manager.get_context().get('current', {}).get('instructions', []))
+            def snapshot():
+                from utils.conversation_storage import ConversationStorage
+                return (ConversationStorage().load_actions(task_id, self.agent_id) or {}).get('action_history', [])
+            self.activities = AgentActivities(task_id, self.agent_id, run_child, message_count=messages,
+                                              snapshot_parent=snapshot)
+            self.activities.restore()
+        return self.activities
+
+    def _orchestrate(self, name, arguments, task_id):
+        manager = self.child_activities(task_id)
+        if name in {'collect', 'collect_subagents'}:
+            result = manager.collect(arguments.get('handles'), arguments.get('timeout_sec', 0), arguments.get('k'))
+            result['_activity_receipts'] = [r['handle'] for r in result['results']]
+            return result
+        if name in {'cancel', 'cancel_subagents'}:
+            return manager.cancel(arguments.get('handles'))
+        tasks = arguments.get('tasks', [])
+        if not isinstance(tasks, list) or not tasks:
+            raise ValueError('tasks must be a non-empty array')
+        # Validate the entire batch before launching any children.
+        for item in tasks:
+            child = item.get('agent') or item.get('agent_name')
+            if self.available_agent_tools is not None and child not in self.available_agent_tools:
+                raise ValueError('SCOPE_DENIED: child agent is not available to the caller')
+            if self.config_loader.get_tool_config(child).get('type') != 'llm_call_agent':
+                raise ValueError('spawn_subagents accepts only linked child agents')
+            if not isinstance(item.get('task_input'), str):
+                raise ValueError('Each child must have a string task_input')
+        join = arguments.get('join', 'all')
+        if join not in {'all', 'any', 'k', 'background'}:
+            raise ValueError('join must be all, any, k or background')
+        if join == 'k' and not 1 <= int(arguments.get('k_count', 1)) <= len(tasks):
+            raise ValueError('k_count is outside the batch')
+        timeout = float(arguments.get('timeout_sec', 86400))
+        if not 0 <= timeout <= 86400:
+            raise ValueError('timeout_sec is outside the supported range')
+        handles = [manager.submit(item.get('agent') or item.get('agent_name'), item['task_input'],
+                    TOOL_CALL.get() or uuid.uuid4().hex, i, item.get('context_mode', 'tool'))
+                   for i, item in enumerate(tasks)]
+        join = arguments.get('join', 'all')
+        if join not in {'all', 'any', 'k', 'background'}:
+            raise ValueError('join must be all, any, k or background')
+        if join == 'background':
+            return {'status': 'success', 'handles': handles, 'pending': handles}
+        count = 1 if join == 'any' else int(arguments.get('k_count', 1)) if join == 'k' else len(handles)
+        result = manager.collect(handles, arguments.get('timeout_sec', 86400), count)
+        result['handles'] = handles
+        result['_activity_receipts'] = [r['handle'] for r in result['results']]
+        return result
 
     def _agent_level(self) -> int:
         try:
@@ -207,6 +279,23 @@ class ToolExecutor:
         safe_print(f"✅ 工具注册表初始化完成，共 {len(self._tools_registry)} 个工具")
     
     def _call_direct(self, tool_name: str, arguments: Dict, task_id: str) -> Dict:
+        if tool_name in {'human_in_loop', 'fresh', 'task_history_search'}:
+            return self._call_direct_inner(tool_name, arguments, task_id)
+        from utils.workspaces import file_access, concurrency
+        if concurrency(task_id) == 'file_lock':
+            config = self.config_loader.get_tool_config(tool_name)
+            safe_files = {'file_read', 'file_write', 'file_move', 'dir_list', 'dir_create', 'file_search', 'grep', 'load_skill', 'offload_skill'}
+            if tool_name not in safe_files and config.get('workspace_compatible') is not True:
+                return {'status': 'error', 'output': '', 'error_code': 'WORKSPACE_INCOMPATIBLE',
+                        'error_information': 'This tool is not declared compatible with concurrent workspaces; use a serial workspace or explicitly declare compatibility'}
+        config = self.config_loader.get_tool_config(tool_name)
+        readers = {'file_read', 'dir_list', 'file_search', 'grep'}
+        if config.get('parallel_safe') is True and tool_name not in readers | {'file_write', 'file_move', 'dir_create'}:
+            return self._call_direct_inner(tool_name, arguments, task_id)
+        with file_access(task_id, shared=tool_name in readers):
+            return self._call_direct_inner(tool_name, arguments, task_id)
+
+    def _call_direct_inner(self, tool_name: str, arguments: Dict, task_id: str) -> Dict:
         """
         进程内直接调用工具（不经过 HTTP）
         
@@ -253,10 +342,11 @@ class ToolExecutor:
                             result_holder["tool_result"] = loop.run_until_complete(coro)
                         finally:
                             loop.close()
-                    except Exception as e:
+                    except BaseException as e:
                         err_holder["error"] = e
 
-                t = threading.Thread(target=_runner, daemon=True)
+                context = contextvars.copy_context()
+                t = threading.Thread(target=context.run, args=(_runner,), daemon=True)
                 t.start()
                 t.join()
 
@@ -326,7 +416,7 @@ class ToolExecutor:
                 get_tool_confirmation_status,
             )
 
-            created = create_tool_confirmation(confirm_id, task_id, tool_name, arguments)
+            created = create_tool_confirmation(confirm_id, task_id, tool_name, self._sanitize_runtime_tool_arguments(tool_name, arguments))
             if not created.get("success"):
                 safe_print("⚠️  创建确认请求失败，默认拒绝执行")
                 return False
@@ -335,10 +425,18 @@ class ToolExecutor:
             
             # 轮询等待用户响应（最多等待 300 秒）
             max_wait = 300
-            check_interval = 2
+            check_interval = .2
             elapsed = 0
             
             while elapsed < max_wait:
+                try:
+                    check_cancelled()
+                except BaseException:
+                    from utils import interactions
+                    path, _ = interactions.find(confirm_id, task_id)
+                    if path:
+                        interactions.end_wait(path, 'cancelled')
+                    raise
                 time.sleep(check_interval)
                 elapsed += check_interval
                 
@@ -374,7 +472,33 @@ class ToolExecutor:
         Returns:
             执行结果字典
         """
+        check_cancelled()
+        if self.available_agent_tools is not None and tool_name not in self.available_agent_tools:
+            return {'status': 'error', 'output': '', 'error_code': 'SCOPE_DENIED',
+                    'error_information': 'Tool is not available to this agent'}
         merged_arguments = self._merge_runtime_tool_defaults(tool_name, arguments)
+        try:
+            declaration = self.config_loader.get_tool_config(tool_name)
+        except KeyError:
+            return {'status': 'error', 'output': '', 'error_code': 'UNKNOWN_TOOL', 'error_information': 'Unknown tool'}
+        schema = declaration.get('parameters')
+        if isinstance(schema, dict) and schema:
+            import jsonschema
+            properties = schema.get('properties', {})
+            if 'task_id' in properties:
+                merged_arguments['task_id'] = task_id
+            effective = dict(arguments or {})
+            for key, value in merged_arguments.items():
+                if key in properties:
+                    effective[key] = value
+            try:
+                jsonschema.validate(effective, schema)
+            except jsonschema.ValidationError as exc:
+                return {'status': 'error', 'output': '', 'error_code': 'INVALID_TOOL_ARGUMENTS',
+                        'error_information': 'Invalid tool arguments at ' + '.'.join(str(p) for p in exc.path)}
+            except jsonschema.SchemaError:
+                return {'status': 'error', 'output': '', 'error_code': 'INVALID_TOOL_SCHEMA',
+                        'error_information': 'Tool declaration has an invalid JSON schema'}
         logged_arguments = self._sanitize_runtime_tool_arguments(tool_name, merged_arguments)
         try:
             trigger_tool_hooks(
@@ -393,9 +517,13 @@ class ToolExecutor:
             # 获取工具配置
             tool_config = self.config_loader.get_tool_config(tool_name)
             tool_type = tool_config.get("type")
-            
             # 特殊处理final_output
-            if tool_name == "final_output":
+            if tool_name in {'spawn_subagents', 'collect', 'cancel', 'collect_subagents', 'cancel_subagents'}:
+                result = self._orchestrate(tool_name, merged_arguments, task_id)
+            elif tool_name == "final_output":
+                if self.activities is not None and self.activities.outstanding():
+                    return {'status': 'error', 'output': '', 'error_code': 'CHILDREN_PENDING',
+                            'error_information': 'Collect or cancel and collect all child activities before final_output'}
                 result = {
                     "status": merged_arguments.get("status", "success"),
                     "output": merged_arguments.get("output", ""),
@@ -419,13 +547,30 @@ class ToolExecutor:
                 else:
                     result = self._call_direct(tool_name, merged_arguments, task_id)
             elif tool_type == "llm_call_agent":
-                result = self._execute_sub_agent(tool_name, tool_config, merged_arguments, task_id)
+                if merged_arguments.get('_background'):
+                    handle = self.child_activities(task_id).submit(tool_name,
+                        str(merged_arguments.get('task_input', '')), TOOL_CALL.get() or uuid.uuid4().hex,
+                        context_mode=merged_arguments.get('_context_mode', 'tool'))
+                    result = {'status': 'success', 'handle': handle, 'pending': [handle]}
+                else:
+                    manager = self.child_activities(task_id)
+                    handle = manager.submit(tool_name, str(merged_arguments.get('task_input', '')),
+                        TOOL_CALL.get() or uuid.uuid4().hex,
+                        context_mode=merged_arguments.get('_context_mode', 'tool'), background=False)
+                    joined = manager.collect([handle], 86400)
+                    if joined['results']:
+                        result = {**joined['results'][0]['result'], '_activity_receipts': [handle]}
+                    else:
+                        result = {'status': 'pending', 'output': 'Child is still running; collect its result later.',
+                                  'handle': handle, 'interrupted_by_user_message': joined['interrupted_by_user_message']}
             else:
                 result = {
                     "status": "error",
                     "output": "",
                     "error_information": f"不支持的工具类型: {tool_type}"
                 }
+        except (StateCommitError, StateCorruptError):
+            raise
         except Exception as e:
             result = {
                 "status": "error",
@@ -478,10 +623,14 @@ class ToolExecutor:
             )
             
             # 执行子Agent
+            sub_agent.tool_executor.set_task_permission(task_id, self.is_auto_mode(task_id))
+            sub_agent.context_mode = arguments.get('_context_mode', 'tool')
             result = sub_agent.run(task_id, task_input)
             
             return result
         
+        except (StateCommitError, StateCorruptError):
+            raise
         except Exception as e:
             import traceback
             error_detail = traceback.format_exc()

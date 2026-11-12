@@ -19,7 +19,6 @@ tools:
       - final_output
       - image_read
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:    
       agent_responsibility: |
         你的职责是根据问题从单个或多个文档中得到答案，或总结，或分析，格式可以是 word，pdf 等，允许阅读 pdf 内的图片。
@@ -60,7 +59,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         收集维基百科中的词条内容，记录需要使用的关键信息，一般用于查明事实信息。
@@ -106,7 +104,6 @@ tools:
       - file_download
       - human_in_loop
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         收集谷歌学术中的论文标题，doi，摘要，作者，出版年份，引用次数等信息。
@@ -154,7 +151,6 @@ tools:
       - final_output
       - file_download
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         收集arxiv 中的论文，并下载相关文献。
@@ -197,7 +193,6 @@ tools:
       - final_output
       - file_download
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         基于搜索引擎搜索公开资料
@@ -359,7 +354,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是更具用户需求定制详细的代码计划和框架
@@ -410,7 +404,6 @@ tools:
       - final_output
       - browser_agent
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是根据一个详细的编码任务指示准确无误的完成要求。
@@ -459,7 +452,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是将用户要求的各种文件移动到用户指定的文件夹中。
@@ -501,7 +493,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         你的职责是将用户要求的各种 python作图实现，并输出图片。
@@ -543,7 +534,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         根据用户文字需求生成图片
@@ -585,7 +575,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         读图，并基于图片回答用户问题或者对于需求格式的文本输出。
@@ -631,7 +620,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         写指定部分的 tex 文件，如写introduction 部分introduction.tex，或者写conclusion 部分conclusion.tex
@@ -683,7 +671,6 @@ tools:
       - reference_delete
       - final_output
     max_turns: 100
-    execution_model: claude-3-7-sonnet-20250219
     prompts:
       agent_responsibility: |
         对文章进行润色，修改和语法纠正。

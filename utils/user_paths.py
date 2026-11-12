@@ -484,8 +484,21 @@ def apply_runtime_env_defaults() -> None:
         os.environ["MLA_MCP_CONFIG_JSON"] = json.dumps(mcp, ensure_ascii=False)
 
 
+import threading as _threading
+_RUNTIME_ENV_LOCK = _threading.RLock()
+
+
 @contextmanager
 def runtime_env_scope(overrides: Optional[Dict[str, Any]] = None) -> Iterator[None]:
+    # SDK roots share process environment. Serialize root scopes; child-agent
+    # parallelism stays inside one scope. The HTTP runtime uses worker processes.
+    with _RUNTIME_ENV_LOCK:
+        with _runtime_env_scope_inner(overrides):
+            yield
+
+
+@contextmanager
+def _runtime_env_scope_inner(overrides: Optional[Dict[str, Any]] = None) -> Iterator[None]:
     """
     在一个受控作用域内切换运行时环境变量，并自动恢复现场。
 

@@ -20,6 +20,8 @@ import time
 class AgentEvent:
     """所有事件的基类"""
     event_type: str
+    agent_id: str = field(default="", kw_only=True)
+    tool_call_id: str = field(default="", kw_only=True)
 
 # region 1. Prepare Phase Events
 @dataclass

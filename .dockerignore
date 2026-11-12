@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!dist/
+!dist/infiagent-3.13.0-py3-none-any.whl
+!docker/
+!docker/entrypoint.sh
+!docker/constraints-linux-py312.txt
+!requirements.txt

@@ -13,17 +13,17 @@ pydantic>=2.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 chardet>=5.2.0
-mcp; python_version >= "3.10"
+mcp>=1.9,<2; python_version >= "3.10"
 pdfplumber>=0.10.0
 python-docx>=1.1.0
-crawl4ai>=0.3.0         # 网页爬取（会自动安装 playwright）
+crawl4ai==0.8.0         # 网页爬取（会自动安装 playwright）
 ddgs>=1.0.0             # DuckDuckGo 搜索
 arxiv>=2.0.0            # arXiv API
 prompt_toolkit>=3.0.0   # CLI 交互
 rich>=13.0.0            # 终端美化
 psutil>=5.9.0           # 进程管理
 PyMuPDF
-playwright>=1.40.0
+playwright==1.64.1
 docx2pdf
 pytest>=7.0.0
 # 核心依赖
@@ -41,7 +41,7 @@ chardet>=5.2.0
 pdfplumber>=0.10.0
 python-docx>=1.1.0
 python-pptx>=0.6.21
-crawl4ai>=0.3.0
+crawl4ai==0.8.0
 ddgs>=1.0.0
 pyyaml>=6.0.0
 arxiv>=2.0.0
@@ -49,4 +49,9 @@ prompt_toolkit>=3.0.0
 rich>=13.0.0
 psutil>=5.9.0 
 
-playwright>=1.40.0
+playwright==1.64.1
+
+# Tool argument validation
+jsonschema>=4.18.0
+
+python-multipart>=0.0.9

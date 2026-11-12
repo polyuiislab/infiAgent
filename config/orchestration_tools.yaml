@@ -1,0 +1,96 @@
+tools:
+  spawn_subagents:
+    type: host_orchestration
+    level: 0
+    description: Run linked child agents concurrently. Each child has independent
+      state. Join all, any, k completed children, or return background handles. Collect
+      remaining results before final_output.
+    parameters:
+      type: object
+      properties:
+        tasks:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              agent:
+                type: string
+              task_input:
+                type: string
+              context_mode:
+                type: string
+                enum:
+                - tool
+                - fresh
+                - inherit
+            required:
+            - agent
+            - task_input
+        join:
+          type: string
+          enum:
+          - all
+          - any
+          - k
+          - background
+        k_count:
+          type: integer
+          minimum: 1
+        timeout_sec:
+          type: number
+          minimum: 0
+          maximum: 86400
+      required:
+      - tasks
+    name: spawn_subagents
+  collect:
+    type: host_orchestration
+    level: 0
+    description: Collect child-agent results. Omit handles to collect all outstanding
+      children. timeout_sec waits without consuming model turns; k returns after k
+      children finish. Pending handles remain available.
+    parameters: &id003
+      type: object
+      properties:
+        handles: &id001
+          type: array
+          items:
+            type: string
+        timeout_sec:
+          type: number
+          minimum: 0
+          maximum: 86400
+        k:
+          type: integer
+          minimum: 1
+      required: &id002 []
+    name: collect
+  cancel:
+    type: host_orchestration
+    level: 0
+    description: Request cooperative cancellation of child agents. Omit handles to
+      cancel all children. Running tools finish before cancellation; collect terminal
+      results before final_output.
+    parameters: &id004
+      type: object
+      properties:
+        handles: *id001
+      required: *id002
+    name: cancel
+  collect_subagents:
+    type: host_orchestration
+    level: 0
+    description: Alias of collect. Collect child-agent results. Omit handles to collect
+      all outstanding children. timeout_sec waits without consuming model turns; k
+      returns after k children finish. Pending handles remain available.
+    parameters: *id003
+    name: collect_subagents
+  cancel_subagents:
+    type: host_orchestration
+    level: 0
+    description: Alias of cancel. Request cooperative cancellation of child agents.
+      Omit handles to cancel all children. Running tools finish before cancellation;
+      collect terminal results before final_output.
+    parameters: *id004
+    name: cancel_subagents

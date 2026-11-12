@@ -71,6 +71,10 @@ def resolve_runtime_agent_context(task_id: str) -> Dict[str, str]:
     runtime = manager.get_runtime_metadata()
     stack = manager._load_stack()
 
+    from utils.execution_scope import CURRENT
+    scope = CURRENT.get()
+    if scope and scope.agent_name and scope.task_id == str(Path(task_id).resolve()):
+        return {"agent_name": scope.agent_name, "agent_system": str(runtime.get("agent_system") or "OpenCowork")}
     current_agent_name = ""
     if isinstance(stack, list) and stack:
         top = stack[-1] or {}
@@ -105,34 +109,45 @@ def global_experience_path(agent_system: str, agent_name: str) -> Path:
 # ==================== 锁与原子写 ====================
 
 @contextmanager
-def _file_lock(path: Path) -> Iterator[None]:
-    """旁路锁文件上的阻塞独占锁；覆盖线程与进程（flock 按 open file description 互斥）。"""
+def _file_lock(path: Path, *, shared: bool = False, blocking: bool = True) -> Iterator[None]:
+    """Cross-process file lock; writers may request an immediate busy result."""
     lock_path = path.with_name(path.name + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(lock_path, "a+")
+    handle = open(lock_path, "a+b")
+    locked = False
     try:
-        if os.name == "nt":  # pragma: no cover - Windows 分支
+        if os.name == "nt":
             import msvcrt
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b'0')
+                handle.flush()
             while True:
                 try:
                     handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
                     break
-                except OSError:
-                    continue
+                except OSError as exc:
+                    if not blocking:
+                        raise BlockingIOError('File is busy') from exc
+                    from utils.execution_scope import check_cancelled
+                    check_cancelled()
         else:
             import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+            fcntl.flock(handle.fileno(), mode | (0 if blocking else fcntl.LOCK_NB))
+        locked = True
         yield
     finally:
         try:
-            if os.name == "nt":  # pragma: no cover
-                import msvcrt
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if locked:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
 

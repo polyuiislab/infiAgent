@@ -1,6 +1,7 @@
 include README.md
 include LICENSE
 include requirements.txt
+recursive-include infiagent/runtime/static *.html *.css *.js *.png
 recursive-include config *.yaml
 recursive-include skills *
 recursive-include tool_server_lite *.py *.md *.txt
@@ -8,3 +9,9 @@ exclude conversations/*
 exclude task_*
 exclude *.log
 exclude .DS_Store
+
+include README_CN.md
+recursive-include docs *.md
+recursive-include tests *.py *.yaml *.json
+
+include CHANGELOG.md

@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>InfiAgent Runtime Console</title>
+<link href="/static/style.css?v=tcm43" rel="stylesheet"/>
+<!-- docker-ha (H11): styles for the paged task list, on-demand tool output and
+       in-transcript stream status lines. Kept here so style.css stays identical
+       to deploy/docker/static/style.css. -->
+<style>
+    .task-load-more {
+      width: 100%;
+      flex: 0 0 auto;
+    }
+    .tool-output-preview {
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 320px;
+    }
+    .tool-output-ref > .tool-output-expand {
+      margin: 0 12px 12px;
+    }
+    .message-system.stream-status {
+      color: #8a5a20;
+      background: #fff6e6;
+      border-color: #f0d9ae;
+    }
+    /* 4.5.0: human_in_loop with options (ui.type = choice) */
+    .hil-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .hil-option {
+      padding: 5px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--accent);
+      background: #fff;
+      color: var(--accent);
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    .hil-option:hover:not(:disabled) {
+      background: var(--accent);
+      color: #fff;
+    }
+    .hil-option:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+    .hil-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .hil-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    /* style.css sizes every input to 100% and makes "label span" a small muted block — undo both here */
+    .hil-check input[type="checkbox"] {
+      width: auto;
+      flex: 0 0 auto;
+      margin: 3px 0 0;
+      padding: 0;
+    }
+    .hil-check span {
+      display: inline;
+      flex: 1 1 auto;
+      min-width: 0;
+      margin-bottom: 0;
+      font-size: 13px;
+      color: var(--text);
+      overflow-wrap: anywhere;
+    }
+    /* 4.6.0 (N03): shared workspaces — task list groups and the workspace choice for new tasks */
+    .ws-choice {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ws-choice[hidden],
+    .ws-create[hidden] {
+      display: none;
+    }
+    .ws-choice label span {
+      margin-bottom: 3px;
+    }
+    .ws-choice select,
+    .ws-choice input[type="text"] {
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    .ws-create {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    /* style.css sizes every input to 100% and makes "label span" a small muted block — undo both here */
+    .ws-parallel {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .ws-parallel input[type="checkbox"] {
+      width: auto;
+      flex: 0 0 auto;
+      margin: 2px 0 0;
+      padding: 0;
+    }
+    .ws-parallel span {
+      display: inline;
+      flex: 1 1 auto;
+      min-width: 0;
+      margin-bottom: 0;
+      font-size: 12px;
+    }
+    .task-group-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      flex: 0 0 auto;
+      padding: 8px 4px 0;
+      border-top: 1px dashed var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .task-group-head:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .task-group-head .ws-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .task-group-head .ws-count {
+      flex: 0 0 auto;
+    }
+    /* 4.6.0 (ha12): sidebar layout. At 1024x768 the task list used to shrink to a 120px inner scroll box and
+       fell below the fold once "新建工作区…" was picked: tighten the blocks above the list, and on short
+       screens scroll the sidebar as a whole instead of nesting a scroll box for the list. */
+    .sidebar {
+      gap: 10px;
+    }
+    .sidebar .runtime-card {
+      padding: 10px 12px;
+    }
+    .sidebar .user-root-panel {
+      padding: 9px 12px;
+    }
+    .sidebar .task-actions {
+      gap: 6px;
+    }
+    .sidebar .task-actions button {
+      padding: 5px 9px;
+      font-size: 12px;
+      border-radius: 9px;
+    }
+    @media (max-height: 860px) {
+      .sidebar .task-list {
+        flex: 0 0 auto;
+        min-height: 0;
+        overflow: visible;
+      }
+    }
+    /* 4.6.0 (ha12): topbar. It stays one row at the 4.5.0 height; the columns squeezed each agent select to ~90px at
+       1440 wide ("scen_agent" showed as "scen_"). Give the selects the width the Task ID and the buttons can spare;
+       where a name still does not fit it ends in an ellipsis and the full name is the tooltip (app.js). */
+    @media (min-width: 861px) {
+      .topbar {
+        grid-template-columns: minmax(0, 5fr) minmax(0, 2fr) auto;
+        gap: 8px;
+        padding: 14px 12px;
+      }
+    }
+    .topbar .selectors {
+      gap: 8px;
+    }
+    .topbar select {
+      padding-left: 8px;
+      padding-right: 8px;
+      text-overflow: ellipsis;
+    }
+    .topbar .topbar-actions {
+      gap: 6px;
+    }
+    .topbar .topbar-actions button {
+      padding: 10px;
+      font-size: 13px;
+    }
+    /* 4.6.5: who the new sessions belong to, a visible error when creating one fails, and the two file areas
+       of a workspace session (shared workspace files / the session's own private directory) */
+    .console-identity label span {
+      margin-bottom: 3px;
+    }
+    .console-identity input[type="text"] {
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    .console-identity input[aria-invalid="true"] {
+      border-color: var(--danger);
+    }
+    .task-notice {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--danger);
+      border: 1px solid rgba(179, 58, 27, 0.35);
+      background: rgba(179, 58, 27, 0.07);
+      border-radius: 10px;
+      padding: 8px 10px;
+      overflow-wrap: anywhere;
+    }
+    .task-notice[hidden] {
+      display: none;
+    }
+    .task-notice .task-notice-hint {
+      margin-top: 4px;
+      color: var(--text);
+    }
+    .task-notice .task-notice-close {
+      float: right;
+      margin: -2px -4px 0 6px;
+      padding: 0 6px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .files-section + .files-section {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--line);
+    }
+    .files-section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .files-section-head .files-section-note {
+      font-weight: 400;
+      color: var(--muted);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+<link href="/static/favicon.png" rel="icon"/></head>
+<body>
+<div class="shell">
+<aside class="sidebar">
+<div class="sidebar-header">
+<div class="sidebar-brand">
+<h1>InfiAgent</h1>
+<button aria-label="InfiAgent version" class="secret-version" id="infiagentVersionTrigger" type="button">v--</button>
+</div>
+<button class="secondary" id="newTaskBtn">New Task</button>
+</div>
+<div class="console-identity" hidden="" style="display:none !important">
+<label>
+<span>用户 ID（新建会话时带上）</span>
+<input autocomplete="off" id="consoleUserId" placeholder="整数或字符串，如 alice；留空 = 无身份会话" spellcheck="false" type="text"/>
+</label>
+</div>
+<div class="ws-choice" hidden="" id="newTaskWorkspacePanel">
+<label>
+<span>新会话的工作区</span>
+<select id="newTaskWorkspace">
+<option value="">不用工作区</option>
+</select>
+</label>
+<div class="ws-create" hidden="" id="newWorkspaceFields">
+<input autocomplete="off" id="newWorkspaceName" placeholder="新工作区名称（留空用会话名）" type="text"/>
+<label class="ws-parallel">
+<input id="newWorkspaceParallel" type="checkbox"/>
+<span>允许多个会话同时运行（文件工具互斥；其他工具需声明兼容）</span>
+</label>
+</div>
+</div>
+<div class="task-notice" hidden="" id="newTaskNotice" role="alert"></div>
+<div class="runtime-card">
+<div class="label">Configured User Root</div>
+<div class="mono small" id="userRootText"></div>
+<div class="small muted" id="runtimeSummary"></div>
+</div>
+<details class="user-root-panel">
+<summary>Upload User Root</summary>
+<label>
+<span>User Root Zip</span>
+<input accept=".zip,application/zip" id="userRootArchive" type="file"/>
+</label>
+<label>
+<span>User Root Folder</span>
+<input directory="" id="userRootFolder" multiple="" type="file" webkitdirectory=""/>
+</label>
+<label>
+<span>Upload Mode</span>
+<select id="userRootUploadMode">
+<option value="merge_overwrite">Merge: overwrite same-name files</option>
+<option value="merge_skip">Merge: skip same-name files</option>
+</select>
+</label>
+<label class="inline-check">
+<input checked="" id="stripUserRootTopLevel" type="checkbox"/>
+<span>Auto strip outer user_root folder</span>
+</label>
+<button class="danger" id="uploadUserRootBtn">Upload User Root</button>
+<div class="small upload-status muted" id="userRootUploadStatus">导入配置、智能体、工具与资源；保留已有会话和运行记录。运行中的任务需先停止。</div>
+<div class="small muted">导入配置、智能体、工具与资源；保留已有会话和运行记录。运行中的任务需先停止。</div>
+</details>
+<details class="user-root-panel" hidden="" style="display:none !important">
+<summary>Update InfiAgent Package</summary>
+<label hidden="" style="display:none !important">
+<span>Pip Index URL</span>
+<input autocomplete="off" id="pipIndexUrl" placeholder="http://user:password@host:8081/simple" type="password"/>
+</label>
+<label hidden="" style="display:none !important">
+<span>Trusted Host</span>
+<input autocomplete="off" id="pipTrustedHost" placeholder="host or host:port" type="text"/>
+</label>
+<label>
+<span>Version</span>
+<input autocomplete="off" id="pipVersion" placeholder="empty = latest" type="text"/>
+</label>
+<label class="inline-check">
+<input checked="" id="pipUpgrade" type="checkbox"/>
+<span>Use pip --upgrade</span>
+</label>
+<button class="secondary" id="updateInfiAgentBtn">Update Package</button>
+<div class="small upload-status muted" id="pipUpdateStatus"></div>
+<div class="small muted">
+          Updates the Python package inside this container only. It does not touch user_root data; restart the container if imported modules need a full reload.
+        </div>
+</details>
+<div class="task-actions">
+<button class="secondary" id="refreshRuntimeBtn">Refresh</button>
+<button class="secondary" id="refreshTasksBtn">Refresh Tasks</button>
+<button class="secondary" hidden="" onclick="window.open('/feedback.html', '_blank')" style="display:none !important">Feedback Panel</button>
+<button class="secondary" onclick="window.open('/usage.html', '_blank')">Usage Panel</button>
+<button class="secondary" hidden="" onclick="window.open('/migrate.html', '_blank')" style="display:none !important">Migration</button>
+</div>
+<div class="task-list" id="taskList"></div>
+</aside>
+<main class="chat-shell">
+<header class="topbar">
+<div class="selectors">
+<label>
+<span>Agent System</span>
+<select id="agentSystem"></select>
+</label>
+<label>
+<span>Agent Name</span>
+<select id="agentName"></select>
+</label>
+</div>
+<div class="task-meta">
+<div class="label">Task ID</div>
+<input id="taskId" type="text" value="demo_task"/>
+</div>
+<div class="topbar-actions">
+<button class="secondary" id="ensureTaskBtn">Ensure</button>
+<button class="secondary" id="historyBtn">Reload History</button>
+<button class="secondary" id="snapshotBtn">Snapshot</button>
+</div>
+</header>
+<section class="messages" id="messages"></section>
+<section class="composer-panel">
+<textarea id="messageInput" placeholder="输入消息，按 Stream Send 以流式执行，或 Queue Message 追加到当前 task。" rows="4">你好</textarea>
+<div class="composer-actions">
+<button id="streamBtn">Stream Send</button>
+<button class="secondary" id="runBtn">Run Once</button>
+<button class="secondary" id="queueBtn">Queue Message</button>
+<button class="danger" id="stopBtn">Stop</button>
+<button class="secondary" id="pauseBtn">Pause</button>
+<button class="secondary" id="resumeBtn">Resume</button>
+<button class="secondary" id="freshBtn">Fresh</button>
+<button class="secondary" id="resetBtn">Reset</button>
+</div>
+<details class="advanced">
+<summary>Advanced</summary>
+<div class="advanced-grid">
+<label>
+<span>System Add Source</span>
+<input id="systemAddPath" placeholder="/data/user_root/system-add/scaffold_demo" type="text"/>
+</label>
+<label>
+<span>Reasoning Mode（框架层）</span>
+<select id="reasoningMode" title="框架层：agent 要不要先跑一轮 Thinking 步骤再行动。留空=不干预，按 agent yaml 的 reasoning_mode &gt; app_config.json 的 runtime.reasoning_mode &gt; 框架默认 thinking 回落。这一项产生界面上的「Thinking · agent 名」折叠块，与模型自己的思维链（左侧「模型思考强度」）是两回事——两者要分别关闭。">
+<option value="">默认（按 agent yaml / app_config.json）</option>
+<option value="thinking">Thinking</option>
+<option value="react">ReAct</option>
+<option value="react_lite">ReAct Lite</option>
+</select>
+</label>
+<label style="display:none !important">
+<span>模型思考强度 (reasoning_effort)</span>
+<select id="reasoningEffort" title="控制模型自己的思维链（reasoning_content）花多少算力，与 Reasoning Mode 完全无关——Reasoning Mode=Thinking 时框架仍会跑自己的 Thinking 步骤，那个要在左边关。留空=按 llm_config / 厂商默认；DeepSeek 后台会把档位映射到实际强度（low→low, medium→high, high→high, xhigh→high, max→max）">
+<option value="">默认（按 llm_config / 厂商默认）</option>
+<option value="none">关闭模型思维链（none）</option>
+<option value="minimal">最低（minimal）</option>
+<option value="low">低（low）</option>
+<option value="medium">中（medium）</option>
+<option value="high">高（high）</option>
+<option value="xhigh">超高（xhigh）</option>
+<option value="max">最高（max）</option>
+</select>
+</label>
+<label style="display:none !important">
+<span>Thinking 上下文模式</span>
+<select id="thinkingContextMode" title="仅对 Reasoning Mode = Thinking 生效。留空=框架默认 legacy，行为与升级前完全一致；cache_friendly 让 Thinking 复用主循环前缀以提高提示词缓存命中（infiagent ≥ 3.12.41）">
+<option value="">默认（legacy，与升级前一致）</option>
+<option value="legacy">legacy（显式）</option>
+<option value="cache_friendly">cache_friendly（缓存友好）</option>
+</select>
+</label>
+<label>
+<span>Thinking Steps</span>
+<input id="thinkingSteps" min="1" type="number" value="30"/>
+</label>
+<label>
+<span>History Recent Items</span>
+<input id="historyRecentItems" min="0" type="number" value="0"/>
+</label>
+<label>
+<span>Tool Mode</span>
+<select id="autoMode">
+<option value="">Default</option>
+<option value="true">Auto</option>
+<option value="false">Confirm</option>
+</select>
+</label>
+<label style="display:none !important">
+<span>Landlock Sandbox</span>
+<select id="sandboxEnabled">
+<option value="">Server default</option>
+<option value="true">Enabled</option>
+<option value="false">Disabled</option>
+</select>
+</label>
+<label>
+<span>Visible Skills (comma-separated)</span>
+<input id="visibleSkills" placeholder="skill_a,skill_b" type="text"/>
+</label>
+<label style="display:none !important">
+<span>Context Placement (缓存友好, 3.12.35)</span>
+<select id="contextPlacement">
+<option value="">Default (system)</option>
+<option value="system">system（动态内容进 system prompt）</option>
+<option value="tail_user">tail_user（Skill正文 + PG当前函数运行时移到末尾 user，稳前缀提缓存）</option>
+</select>
+</label>
+<label style="display:none !important">
+<span>Skill Materialization (3.12.35)</span>
+<select id="skillMaterialization">
+<option value="">Default (copy)</option>
+<option value="copy">copy（复制到 task 的 .skills）</option>
+<option value="reference_ro">reference_ro（内容寻址只读快照，跨 task 复用去重）</option>
+</select>
+</label>
+<label style="display:none !important">
+<span>Skill Store Dir (reference_ro 用)</span>
+<input id="skillStoreDir" placeholder="/data/user_root/skill_store" type="text"/>
+</label>
+<label>
+<span>Max Turns</span>
+<input id="maxTurns" min="1" placeholder="Use default" type="number" value=""/>
+</label>
+<label>
+<span>Auto Resume Attempts</span>
+<input id="autoResumeAttempts" min="0" type="number" value="2"/>
+</label>
+<label>
+<span>Auto Resume Delay (sec)</span>
+<input id="autoResumeDelaySec" min="0" step="0.1" type="number" value="1"/>
+</label>
+<label class="inline-check">
+<input id="forceNew" type="checkbox"/>
+<span>Force new run state</span>
+</label>
+<label class="inline-check">
+<input checked="" id="includeTrace" type="checkbox"/>
+<span>Include trace in response</span>
+</label>
+<label class="inline-check">
+<input checked="" id="queueResumeIfNeeded" type="checkbox"/>
+<span>Queue can resume stopped task</span>
+</label>
+</div>
+<label>
+<span>SDK Overrides JSON</span>
+<textarea id="sdkOverrides" rows="10">{}</textarea>
+</label>
+<div class="small muted">
+            Hidden tool params can be pasted directly as {"run_sql_query": {...}} or wrapped as {"tool_runtime_defaults": {"run_sql_query": {...}}}.
+            The server will normalize direct tool-name keys into tool_runtime_defaults.
+          </div>
+<div class="upload-panel">
+<label>
+<span>Upload Files to Current Task</span>
+<input id="uploadFiles" multiple="" type="file"/>
+</label>
+<div class="composer-actions">
+<button class="secondary" id="uploadBtn">Upload Files</button>
+<button class="secondary" id="listUploadsBtn">List Uploads</button>
+</div>
+<label style="display:none !important">
+<span>Import Local Path (server-visible path)</span>
+<input id="importPath" placeholder="/data/shared/report.pdf" type="text"/>
+</label>
+<div class="composer-actions">
+<button class="secondary" hidden="" id="importPathBtn" style="display:none !important">Import Path</button>
+</div>
+</div>
+</details>
+</section>
+</main>
+<aside class="inspector">
+<div class="inspector-header">
+<h2>API Preview</h2>
+<div class="inspector-actions">
+<button class="secondary" id="previewStreamBtn">Stream</button>
+<button class="secondary" id="previewRunBtn">Run</button>
+<button class="secondary" id="previewQueueBtn">Queue</button>
+<button class="secondary" id="previewEnsureBtn">Ensure</button>
+</div>
+</div>
+<div class="small muted" id="apiPreviewStatus"></div>
+<div class="side-panel open" id="taskFilesPanel">
+<div class="panel-head" id="taskFilesToggle">
+<span class="panel-caret">▾</span>
+<span class="panel-title">Task Files</span>
+<span class="small muted mono" id="taskFilesTitle"></span>
+<button class="secondary" id="taskFilesRefreshBtn" type="button">Refresh</button>
+</div>
+<div class="files-tree panel-body" id="taskFilesTree"></div>
+</div>
+<div class="side-panel" id="outputPanel">
+<div class="panel-head" id="outputToggle">
+<span class="panel-caret">▸</span>
+<span class="panel-title">API Output</span>
+<span class="small muted">请求预览与最近一次响应</span>
+</div>
+<pre class="panel-body" id="output"></pre>
+</div>
+</aside>
+</div>
+<script src="/static/request_auth.js"></script><script src="/static/app.js?v=3.13.0"></script>
+<script src="/static/version_badge.js"></script>
+<script src="/static/model_config.js"></script></body>
+</html>

@@ -141,6 +141,8 @@ def register_running_task(task_id: str, agent_name: str, user_input: str, agent_
             "pid": os.getpid(),
             "registered_at": datetime.now().isoformat(),
         }
+        import psutil
+        payload['process_created'] = psutil.Process(os.getpid()).create_time()
         _write_json_atomic(_running_task_file(task_id), payload)
 
 
@@ -181,7 +183,15 @@ def get_running_task(task_id: str) -> Optional[Dict]:
 
         pid = int(data.get("pid") or 0)
         if _is_pid_alive(pid):
-            return data
+            expected = data.get('process_created')
+            if expected is None:
+                return data
+            import psutil
+            try:
+                if abs(psutil.Process(pid).create_time() - float(expected)) < .001:
+                    return data
+            except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
+                pass
 
         try:
             path.unlink()

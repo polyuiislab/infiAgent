@@ -412,6 +412,16 @@ class InfiAgent:
             enriched["trace"] = self.task_trace(task_id=task_id)
         return enriched
 
+    def create_workspace(self, workspace_id: str, title: str = "", concurrency: str = "serial") -> Dict[str, Any]:
+        from utils.workspaces import create
+        with self._runtime_scope():
+            return create(workspace_id, title, concurrency)
+
+    def list_workspaces(self) -> List[Dict[str, Any]]:
+        from utils.workspaces import list_workspaces
+        with self._runtime_scope():
+            return list_workspaces()
+
     def run(
         self,
         user_input: str,
@@ -421,6 +431,7 @@ class InfiAgent:
         agent_name: Optional[str] = None,
         force_new: bool = False,
         workspace: Optional[str] = None,
+        workspace_id: Optional[str] = None,
         collect_events: bool = False,
         on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
         include_trace: bool = False,
@@ -505,12 +516,17 @@ class InfiAgent:
             system_add_content=system_add_content,
         )
 
-        with self._runtime_scope(extra_runtime_overrides or None):
+        from utils.task_owner import task_owner
+        from utils.configuration_lock import configuration_access
+        with self._runtime_scope(extra_runtime_overrides or None), configuration_access(get_user_data_root()), task_owner(target_task_id) as owned:
+            if workspace_id is not None:
+                from utils.workspaces import attach
+                attach(target_task_id, workspace_id)
             extra_event_handlers, collected_events = self._build_sdk_event_handler(
                 collect_events=collect_events,
                 on_event=on_event,
             )
-            if is_task_running(target_task_id):
+            if not owned or is_task_running(target_task_id):
                 busy_result = {
                     "status": "busy",
                     "task_id": target_task_id,
@@ -529,6 +545,9 @@ class InfiAgent:
 
             if force_new:
                 hierarchy_manager.clear_current_state()
+                from utils.atomic_state import write_json
+                import uuid
+                write_json(Path(target_task_id) / '.sdk_runtime' / 'generation.json', {'id': uuid.uuid4().hex})
             else:
                 clean_before_start(target_task_id, user_input)
 
@@ -571,6 +590,9 @@ class InfiAgent:
                             "cleared_at": datetime.now().isoformat(),
                             "reason": "task_completed",
                         })
+                    break
+
+                if result.get('status') in {'stopped', 'cancelled'}:
                     break
 
                 if auto_resume_used >= resolved_auto_resume_attempts:
@@ -951,6 +973,7 @@ class InfiAgent:
         agent_name: Optional[str] = None,
         force_new: bool = False,
         workspace: Optional[str] = None,
+        workspace_id: Optional[str] = None,
         collect_events: bool = False,
         on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
         include_trace: bool = False,
@@ -974,6 +997,7 @@ class InfiAgent:
             agent_name=agent_name,
             force_new=force_new,
             workspace=workspace,
+            workspace_id=workspace_id,
             collect_events=collect_events,
             on_event=on_event,
             include_trace=include_trace,

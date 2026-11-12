@@ -157,7 +157,19 @@ class ContextBuilder:
         history_search_hint = self._build_task_history_search_hint(visible_history_count, total_history_count)
         structured_call_info = self._build_structured_call_info(current, agent_id, task_id)
         current_thinking = self._build_current_thinking(task_id, agent_id, current)
-        workspace_abs_path = task_id
+        from utils.execution_scope import CURRENT
+        scope = CURRENT.get()
+        if scope and scope.context_mode == 'fresh':
+            user_latest_input = task_input
+            user_agent_history = ''
+            history_search_hint = ''
+            structured_call_info = ''
+            task_system_add = ''
+            experience_blocks = ''
+        elif scope and scope.context_mode == 'inherit' and scope.context_seed:
+            task_system_add += '\n<inherited_actions>\n' + json.dumps(scope.context_seed, ensure_ascii=False) + '\n</inherited_actions>'
+        from utils.workspaces import files_root
+        workspace_abs_path = str(files_root(task_id))
         skills_root_abs_path = str(get_user_skills_library_root())
         runtime_meta = context_data.get("runtime", {})
         visible_skills = None

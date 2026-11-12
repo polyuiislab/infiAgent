@@ -31,13 +31,17 @@ def get_abs_path(task_id: str, relative_path: str) -> Path:
     Returns:
         绝对路径
     """
+    from utils.workspaces import files_root, resolve_file
+    if files_root(task_id) != Path(task_id).resolve():
+        return resolve_file(task_id, relative_path or '.')
     rel_text = str(relative_path or "").strip()
     if rel_text == "":
         rel_text = "."
     sandbox_path = apply_file_tool_path_policy(task_id, rel_text, allow_empty=True)
     if sandbox_path is not None:
         return sandbox_path
-    workspace = Path(task_id)
+    from utils.workspaces import files_root
+    workspace = files_root(task_id)
     if rel_text.startswith("/"):
         rel_text = rel_text.lstrip("/")
     elif rel_text.startswith("./"):

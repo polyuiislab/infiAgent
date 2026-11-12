@@ -7,6 +7,8 @@
 
 from typing import List, Protocol
 from .events import AgentEvent
+from utils.execution_scope import CURRENT, TOOL_CALL
+import threading
 
 class EventHandler(Protocol):
     """
@@ -28,6 +30,7 @@ class AgentEventEmitter:
     """
     def __init__(self):
         self._handlers: List[EventHandler] = []
+        self._lock = threading.RLock()
 
     def register(self, handler: EventHandler):
         """
@@ -46,9 +49,17 @@ class AgentEventEmitter:
         Args:
             event: 要分发的事件对象
         """
-        for handler in self._handlers:
+        scope = CURRENT.get()
+        if not getattr(event, 'agent_id', '') and scope:
+            event.agent_id = scope.agent_id
+        if not getattr(event, 'agent_name', '') and scope:
+            event.agent_name = scope.agent_name
+        if not getattr(event, 'tool_call_id', ''):
+            event.tool_call_id = TOOL_CALL.get()
+        for handler in list(self._handlers):
             try:
-                handler.handle(event)
+                with self._lock:
+                    handler.handle(event)
             except Exception as e:
                 # 避免一个处理器的失败影响其他处理器
                 # todo: 这里后续需要换成统一的logger，方便采集服务日志
