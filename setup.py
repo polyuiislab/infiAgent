@@ -14,6 +14,9 @@ readme_file = Path(__file__).parent / "README.md"
 long_description = readme_file.read_text(encoding='utf-8') if readme_file.exists() else ""
 long_description = re.sub(r'!\[([^\]]*)\]\((assets/[^)]+)\)', r'![\1](https://raw.githubusercontent.com/polyuiislab/infiAgent/main/\2)', long_description)
 long_description = re.sub(r'\]\(((?:docs/|README|LICENSE)[^)]+|LICENSE)\)', r'](https://github.com/polyuiislab/infiAgent/blob/main/\1)', long_description)
+long_description = re.sub(r'src="(assets/[^"]+)"', r'src="https://raw.githubusercontent.com/polyuiislab/infiAgent/main/\1"', long_description)
+long_description = re.sub(r'href="(README[^"]+)"', r'href="https://github.com/polyuiislab/infiAgent/blob/main/\1"', long_description)
+long_description = re.sub(r'\]\(((?:config/|CHANGELOG)[^)]+)\)', r'](https://github.com/polyuiislab/infiAgent/blob/main/\1)', long_description)
 
 
 # 读取依赖
