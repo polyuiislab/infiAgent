@@ -889,7 +889,7 @@ Agent调用树数据：
             try:
                 result_json = json.dumps(result, ensure_ascii=False, indent=2)
                 action_xml += f"  <result>\n{result_json}\n  </result>\n"
-            except:
+            except Exception:
                 action_xml += f"  <result>{str(result)}</result>\n"
             
             # action_xml += "</action>"
