@@ -20,6 +20,8 @@
 """
 
 from __future__ import annotations
+from utils.atomic_state import retry_windows_sharing
+
 
 import os
 import re
@@ -109,9 +111,9 @@ def global_experience_path(agent_system: str, agent_name: str) -> Path:
 # ==================== 锁与原子写 ====================
 
 @contextmanager
-def _file_lock(path: Path, *, shared: bool = False, blocking: bool = True) -> Iterator[None]:
+def _file_lock(path: Path, *, shared: bool = False, blocking: bool = True, lock_file: bool = False) -> Iterator[None]:
     """Cross-process file lock; writers may request an immediate busy result."""
-    lock_path = path.with_name(path.name + ".lock")
+    lock_path = path if lock_file else path.with_name(path.name + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle = open(lock_path, "a+b")
     locked = False
@@ -180,7 +182,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp_name, path)
+        retry_windows_sharing(lambda: os.replace(tmp_name, path))
         try:  # 目录项持久化（尽力而为）
             dir_fd = os.open(str(path.parent), os.O_RDONLY)
             try:
@@ -211,7 +213,7 @@ def read_experience_file(path: Path) -> Tuple[int, List[ExperienceEntry]]:
     """返回 (revision, entries)；文件不存在 → (0, [])；无 revision 注释按 0（旧格式兼容）。"""
     if not path.exists():
         return 0, []
-    text = path.read_text(encoding="utf-8")
+    text = retry_windows_sharing(lambda: path.read_text(encoding="utf-8"))
     match = _REVISION_RE.search(text.split("\n\n", 1)[0] if text.startswith("# ") else text[:200])
     revision = int(match.group(1)) if match else 0
     return revision, _parse_entries_text(text)
@@ -436,7 +438,7 @@ def _transactional_mutation(
     with _locked_many(paths):
         plans: List[Dict[str, Any]] = []
         for path, title in targets:
-            old_bytes = path.read_bytes() if path.exists() else None
+            old_bytes = retry_windows_sharing(path.read_bytes) if path.exists() else None
             revision, entries = read_experience_file(path)
             new_entries, info = mutation(list(entries), revision, path, title)
             noop = bool(skip_write_if_noop) and not info.get(skip_write_if_noop)

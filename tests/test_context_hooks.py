@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,7 +40,7 @@ class ContextHookTests(unittest.TestCase):
             )
             with runtime_env_scope({
                 "MLA_USER_DATA_ROOT": str(root),
-                "MLA_CONTEXT_HOOKS_JSON": f'[{{"name":"demo","when":"after_build","callback":"{hook_file}:on_context"}}]',
+                "MLA_CONTEXT_HOOKS_JSON": json.dumps([{"name": "demo", "when": "after_build", "callback": f"{hook_file}:on_context"}]),
             }):
                 builder = ContextBuilder(
                     _DummyHierarchyManager(),

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -13,6 +14,23 @@ class StateCommitError(RuntimeError):
 
 class StateCorruptError(RuntimeError):
     code = "STATE_CORRUPT"
+
+
+def retry_windows_sharing(operation, *, timeout=2.0):
+    """Retry Windows sharing/access conflicts during an atomic file replacement.
+
+    Unlocked readers and antivirus scanners may briefly hold a handle that denies
+    delete sharing. Keep the existing record intact, and propagate persistent
+    permission failures; POSIX errors and other Windows errors are not retried.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return operation()
+        except OSError as exc:
+            if getattr(exc, "winerror", None) not in {5, 32, 33} or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.01)
 
 
 def write_json(path, data):
@@ -27,7 +45,7 @@ def write_json(path, data):
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        retry_windows_sharing(lambda: os.replace(temporary, path))
         temporary = None
         if os.name != "nt":
             fd = os.open(path.parent, os.O_RDONLY)
@@ -48,7 +66,7 @@ def write_json(path, data):
 def read_json(path, *, missing=None):
     path = Path(path)
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(retry_windows_sharing(lambda: path.read_text(encoding="utf-8")))
     except FileNotFoundError:
         return missing
     except Exception as exc:
