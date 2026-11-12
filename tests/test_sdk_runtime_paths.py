@@ -199,20 +199,13 @@ class SDKRuntimePathTests(unittest.TestCase):
 
         pid = result.get("pid")
         self.assertIsInstance(pid, int)
-        time.sleep(0.5)
+        import psutil
         try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+            process = psutil.Process(pid)
+            process.terminate()
+            process.wait(timeout=5)
+        except psutil.NoSuchProcess:
             pass
-        else:
-            for _ in range(20):
-                try:
-                    waited_pid, _ = os.waitpid(pid, os.WNOHANG)
-                except ChildProcessError:
-                    break
-                if waited_pid == pid:
-                    break
-                time.sleep(0.1)
 
     def test_task_snapshot_falls_back_to_history_final_output(self):
         root = (self.base / "history_root").resolve()

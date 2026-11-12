@@ -81,15 +81,10 @@ def _read_json(path: Path) -> Optional[Dict]:
 def _is_pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except Exception:
-        return False
+    # On Windows signal 0 is CTRL_C_EVENT, not a harmless liveness probe.
+    # Query the process table without sending a signal to the console group.
+    import psutil
+    return psutil.pid_exists(pid)
 
 
 def request_fresh(reason: str = "", task_id: Optional[str] = None):

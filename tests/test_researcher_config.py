@@ -6,9 +6,7 @@ from pathlib import Path
 import yaml
 
 
-RESEARCHER_ROOT = Path(
-    "/Users/chenglin/Desktop/research/agent_framwork/vscode_version/MLA_V3/backend/config/agent_library/Researcher"
-)
+RESEARCHER_ROOT = Path(__file__).resolve().parents[1] / "config" / "agent_library" / "Researcher"
 
 
 def _load_yaml(path: Path):

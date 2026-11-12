@@ -29,7 +29,7 @@ def _get_state_thread_lock(lock_file: Path) -> threading.RLock:
         return _state_thread_locks[lock_key]
 
 
-from utils.atomic_state import write_json, StateCommitError, StateCorruptError
+from utils.atomic_state import write_json, retry_windows_sharing, StateCommitError, StateCorruptError
 from utils.execution_scope import CURRENT
 
 class HierarchyManager:
@@ -94,40 +94,11 @@ class HierarchyManager:
     @contextmanager
     def _process_lock(self):
         """跨进程串行化同一 task 的 stack/share_context 读改写。"""
-        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.lock_file, 'a+', encoding='utf-8') as lock_handle:
-            locked = False
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    lock_handle.seek(0)
-                    if not lock_handle.read(1):
-                        lock_handle.seek(0)
-                        lock_handle.write("0")
-                        lock_handle.flush()
-                    lock_handle.seek(0)
-                    msvcrt.locking(lock_handle.fileno(), msvcrt.LK_LOCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-                locked = True
-            except Exception as e:
-                raise StateCommitError('Cannot acquire task state lock') from e
-
-            try:
-                yield
-            finally:
-                if locked:
-                    try:
-                        if os.name == "nt":
-                            import msvcrt
-                            lock_handle.seek(0)
-                            msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
-                        else:
-                            import fcntl
-                            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-                    except Exception as e:
-                        safe_print(f"⚠️ 释放任务状态文件锁失败: {e}")
+        from utils.experience_store import _file_lock
+        # Use the existing task lock filename; never read a byte locked by another
+        # Windows process merely to determine whether the lock file exists.
+        with _file_lock(self.lock_file, lock_file=True):
+            yield
 
     @contextmanager
     def _state_lock(self):
@@ -142,9 +113,8 @@ class HierarchyManager:
     def _load_stack(self) -> List[Dict]:
         """加载当前栈状态"""
         try:
-            with open(self.stack_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("stack", [])
+            data = json.loads(retry_windows_sharing(lambda: self.stack_file.read_text(encoding="utf-8")))
+            return data.get("stack", [])
         except FileNotFoundError:
             return []
         except Exception as e:
@@ -163,8 +133,7 @@ class HierarchyManager:
     def _load_context(self) -> Dict:
         """加载共享上下文"""
         try:
-            with open(self.context_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            return json.loads(retry_windows_sharing(lambda: self.context_file.read_text(encoding="utf-8")))
         except FileNotFoundError:
             return {
                 "task_id": self.task_id,
